@@ -1,4 +1,4 @@
-﻿
+
 from __future__ import annotations
 
 import json
@@ -607,6 +607,14 @@ def delete_user(user_id: int, db: Session = Depends(get_db), current_user: User 
 @router.get("/system/reporting-windows", response_model=list[ReportingWindowConfigRead], summary="List reporting windows")
 def list_reporting_windows(db: Session = Depends(get_db), current_user: User = Depends(require_permission(PermissionCode.REPORTING_WINDOW_MANAGE))) -> list[ReportingWindowConfig]:
     return db.scalars(select(ReportingWindowConfig).order_by(ReportingWindowConfig.report_month.desc())).all()
+
+
+@router.get("/system/reporting-windows/{report_month}", response_model=ReportingWindowConfigRead, summary="Get one reporting window")
+def get_reporting_window(report_month: str, db: Session = Depends(get_db), current_user: User = Depends(require_role(UserRole.PROVINCE, UserRole.CITY, UserRole.ENTERPRISE))) -> ReportingWindowConfig:
+    config = _get_reporting_window(db, report_month)
+    if config is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reporting window was not found")
+    return config
 
 
 @router.post("/system/reporting-windows", response_model=ReportingWindowConfigRead, summary="Create or update reporting window")
