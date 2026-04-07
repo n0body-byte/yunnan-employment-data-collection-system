@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <el-space direction="vertical" fill size="20">
     <el-card shadow="never">
       <div style="display:flex;justify-content:space-between;align-items:center">
@@ -29,6 +29,7 @@
           <el-table-column label="操作" min-width="260">
             <template #default="scope">
               <el-space>
+                <el-button type="primary" size="small" @click="viewEnterprise(scope.row)">查看</el-button>
                 <el-button type="success" size="small" @click="auditFiling(scope.row.id, 'APPROVE')">通过</el-button>
                 <el-button type="danger" size="small" @click="openFilingReject(scope.row.id)">退回</el-button>
               </el-space>
@@ -54,7 +55,9 @@
           <el-table-column label="操作" min-width="420">
             <template #default="scope">
               <el-space wrap>
+                <el-button size="small" type="primary" @click="viewReport(scope.row.id)">查看</el-button>
                 <el-button size="small" type="success" @click="finalAudit(scope.row.id)">终审归档</el-button>
+                <el-button size="small" type="danger" plain @click="openReportReject(scope.row.id)">退回修改</el-button>
                 <el-button size="small" @click="reportToMinistry(scope.row.id)">上报部级</el-button>
                 <el-button size="small" type="warning" @click="openRevision(scope.row)">数据修改</el-button>
                 <el-button size="small" @click="viewRevisions(scope.row.id)">修订记录</el-button>
@@ -218,6 +221,42 @@
       </el-table>
     </el-dialog>
   </el-space>
+    <el-dialog v-model="reportRejectVisible" title="省级退回修改说明" width="520px">
+      <el-input v-model="reportRejectRemark" type="textarea" :rows="4" maxlength="500" />
+      <template #footer><el-button @click="reportRejectVisible=false">取消</el-button><el-button type="primary" @click="confirmReportReject">确认退回</el-button></template>
+    </el-dialog>
+
+    <el-drawer v-model="enterpriseDetailVisible" title="企业备案详情" size="520px">
+      <el-descriptions v-if="selectedEnterprise" :column="1" border>
+        <el-descriptions-item label="企业名称">{{ selectedEnterprise.name }}</el-descriptions-item>
+        <el-descriptions-item label="组织机构代码">{{ selectedEnterprise.organization_code }}</el-descriptions-item>
+        <el-descriptions-item label="所属地区">{{ selectedEnterprise.region }}</el-descriptions-item>
+        <el-descriptions-item label="企业性质">{{ selectedEnterprise.nature }}</el-descriptions-item>
+        <el-descriptions-item label="所属行业">{{ selectedEnterprise.industry }}</el-descriptions-item>
+        <el-descriptions-item label="主要经营业务">{{ selectedEnterprise.main_business }}</el-descriptions-item>
+        <el-descriptions-item label="联系人">{{ selectedEnterprise.contact_person }}</el-descriptions-item>
+        <el-descriptions-item label="联系电话">{{ selectedEnterprise.phone }}</el-descriptions-item>
+        <el-descriptions-item label="联系地址">{{ selectedEnterprise.address }}</el-descriptions-item>
+        <el-descriptions-item label="邮箱">{{ selectedEnterprise.email || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="传真">{{ selectedEnterprise.fax || '-' }}</el-descriptions-item>
+      </el-descriptions>
+    </el-drawer>
+
+    <el-drawer v-model="reportDetailVisible" title="月报详情" size="520px">
+      <el-descriptions v-if="selectedReport" :column="1" border>
+        <el-descriptions-item label="统计月份">{{ selectedReport.report_month }}</el-descriptions-item>
+        <el-descriptions-item label="企业ID">{{ selectedReport.enterprise_id }}</el-descriptions-item>
+        <el-descriptions-item label="建档期人数">{{ selectedReport.baseline_employees }}</el-descriptions-item>
+        <el-descriptions-item label="调查期人数">{{ selectedReport.current_employees }}</el-descriptions-item>
+        <el-descriptions-item label="状态">{{ selectedReport.review_status }}</el-descriptions-item>
+        <el-descriptions-item label="减少类型">{{ selectedReport.reduction_type || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="主要原因">{{ selectedReport.primary_reason || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="主要原因说明">{{ selectedReport.primary_reason_detail || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="次要原因">{{ selectedReport.secondary_reason || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="第三原因">{{ selectedReport.third_reason || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="退回说明">{{ selectedReport.return_remark || '-' }}</el-descriptions-item>
+      </el-descriptions>
+    </el-drawer>
 </template>
 
 <script setup lang="ts">
@@ -250,6 +289,10 @@ const revisionReportId = ref<number | null>(null)
 const userEditorVisible = ref(false)
 const roleEditorVisible = ref(false)
 const notificationEditorVisible = ref(false)
+const enterpriseDetailVisible = ref(false)
+const reportDetailVisible = ref(false)
+const selectedEnterprise = ref<any>(null)
+const selectedReport = ref<any>(null)
 const editingUserId = ref<number | null>(null)
 const editingRoleId = ref<number | null>(null)
 const editingNotificationId = ref<number | null>(null)
@@ -309,7 +352,29 @@ const auditFiling = async (id: number, action: 'APPROVE' | 'REJECT', remark?: st
 }
 const openFilingReject = (id: number) => { filingRejectId.value = id; filingRejectRemark.value = ''; filingRejectVisible.value = true }
 const confirmFilingReject = async () => { if (!filingRejectId.value || !filingRejectRemark.value) return; await auditFiling(filingRejectId.value, 'REJECT', filingRejectRemark.value); filingRejectVisible.value = false }
+const viewEnterprise = (row: any) => { selectedEnterprise.value = row; enterpriseDetailVisible.value = true }
 const finalAudit = async (id: number) => { try { await http.post(`/api/employment-reports/${id}/final-audit`); ElMessage.success('终审归档成功'); await loadReports() } catch (error: any) { ElMessage.error(error?.response?.data?.detail ?? '终审失败') } }
+const openReportReject = (id: number) => { reportRejectId.value = id; reportRejectRemark.value = ''; reportRejectVisible.value = true }
+const confirmReportReject = async () => {
+  if (!reportRejectId.value || !reportRejectRemark.value) return
+  try {
+    await http.post(`/api/employment-reports/${reportRejectId.value}/province-return`, { action: 'REJECT', remark: reportRejectRemark.value })
+    ElMessage.success('报表已退回修改')
+    reportRejectVisible.value = false
+    await loadReports()
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.detail ?? '退回失败')
+  }
+}
+const viewReport = async (id: number) => {
+  try {
+    const { data } = await http.get(`/api/employment-reports/${id}`)
+    selectedReport.value = data
+    reportDetailVisible.value = true
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.detail ?? '报表详情加载失败')
+  }
+}
 const reportToMinistry = async (id: number) => { try { await http.post(`/api/employment-reports/${id}/report-to-ministry`); ElMessage.success('已上报部级'); await loadReports() } catch (error: any) { ElMessage.error(error?.response?.data?.detail ?? '上报失败') } }
 const deleteReport = async (id: number) => { const remark = await ElMessageBox.prompt('请输入删除原因', '删除报表'); if (!remark.value) return; await http.delete(`/api/employment-reports/${id}`, { params: { remark: remark.value } }); ElMessage.success('报表已删除'); await loadReports() }
 const openRevision = (row: any) => { revisionReportId.value = row.id; revisionForm.note = ''; revisionForm.baseline_employees = row.baseline_employees; revisionForm.current_employees = row.current_employees; revisionForm.reduction_type = row.reduction_type || ''; revisionForm.primary_reason = row.primary_reason || ''; revisionForm.primary_reason_detail = row.primary_reason_detail || ''; revisionVisible.value = true }
