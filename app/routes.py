@@ -537,17 +537,38 @@ def export_users(
     username: str | None = Query(default=None),
     role: UserRole | None = Query(default=None),
     region: str | None = Query(default=None),
+    enterprise_name: str | None = Query(default=None),
+    filing_status: FilingStatus | None = Query(default=None),
+    nature: str | None = Query(default=None),
+    industry: str | None = Query(default=None),
+    is_active: bool | None = Query(default=None),
+    start_date: datetime | None = Query(default=None),
+    end_date: datetime | None = Query(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission(PermissionCode.PROVINCE_DATA_EXPORT, PermissionCode.USER_MANAGE)),
 ) -> StreamingResponse:
-    statement = select(User).order_by(User.created_at.desc(), User.id.desc())
+    statement = select(User).outerjoin(Enterprise, Enterprise.owner_user_id == User.id)
     if username:
         statement = statement.where(User.username.contains(username))
     if role is not None:
         statement = statement.where(User.role == role)
     if region:
         statement = statement.where(_region_scope_expression(User.region, region))
-    users = db.scalars(statement).all()
+    if enterprise_name:
+        statement = statement.where(Enterprise.name.contains(enterprise_name))
+    if filing_status is not None:
+        statement = statement.where(Enterprise.filing_status == filing_status)
+    if nature:
+        statement = statement.where(Enterprise.nature.contains(nature))
+    if industry:
+        statement = statement.where(Enterprise.industry.contains(industry))
+    if is_active is not None:
+        statement = statement.where(User.is_active == is_active)
+    if start_date is not None:
+        statement = statement.where(User.created_at >= start_date)
+    if end_date is not None:
+        statement = statement.where(User.created_at <= end_date)
+    users = db.scalars(statement.order_by(User.created_at.desc(), User.id.desc())).unique().all()
     file_content = export_user_list_to_xlsx(users)
     return StreamingResponse(BytesIO(file_content), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": 'attachment; filename="users.xlsx"'})
 
