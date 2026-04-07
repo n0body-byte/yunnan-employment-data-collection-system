@@ -805,6 +805,20 @@ def province_final_audit_report(report_id: int, db: Session = Depends(get_db), c
     return _serialize_report(_get_report_or_404(db, report.id))
 
 
+@router.post("/employment-reports/{report_id}/province-return", response_model=EmploymentReportRead, summary="Province return for modification")
+def province_return_report(report_id: int, payload: EmploymentReportAuditRequest, db: Session = Depends(get_db), current_user: User = Depends(require_permission(PermissionCode.PROVINCE_REPORT_MANAGE))) -> EmploymentReportRead:
+    report = _get_report_or_404(db, report_id)
+    if report.review_status != ReviewStatus.PENDING_PROVINCE_REVIEW:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Report is not pending province review")
+    if payload.action != AuditAction.REJECT:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Province return endpoint only supports reject action")
+    report.review_status = ReviewStatus.REJECTED
+    report.return_remark = payload.remark
+    report.province_audited_at = _now_utc()
+    db.commit()
+    return _serialize_report(_get_report_or_404(db, report.id))
+
+
 @router.post("/employment-reports/{report_id}/report-to-ministry", response_model=EmploymentReportRead, summary="Report data to ministry")
 def report_to_ministry(report_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission(PermissionCode.NATIONAL_EXCHANGE, PermissionCode.PROVINCE_REPORT_MANAGE))) -> EmploymentReportRead:
     report = _get_report_or_404(db, report_id)
