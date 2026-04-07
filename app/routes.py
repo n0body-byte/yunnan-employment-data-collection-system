@@ -942,8 +942,28 @@ def get_job_change_trend(months: int = Query(default=6, ge=1, le=24), region: st
     return [MonthlyJobChangeTrendRead(report_month=month, total_job_changes=buckets[month]["changes"], job_change_ratio=0.0 if buckets[month]["baseline"] == 0 else round(buckets[month]["changes"] / buckets[month]["baseline"], 4)) for month in selected_months]
 
 @router.get("/province/enterprises/export", status_code=status.HTTP_200_OK, summary="Export enterprise filings to xlsx")
-def export_enterprises_xlsx(db: Session = Depends(get_db), current_user: User = Depends(require_permission(PermissionCode.PROVINCE_DATA_EXPORT))) -> StreamingResponse:
-    enterprises = db.scalars(select(Enterprise).order_by(Enterprise.region, Enterprise.name)).all()
+def export_enterprises_xlsx(
+    filing_status: FilingStatus | None = Query(default=None),
+    region: str | None = Query(default=None),
+    name: str | None = Query(default=None),
+    organization_code: str | None = Query(default=None),
+    report_month: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission(PermissionCode.PROVINCE_DATA_EXPORT)),
+) -> StreamingResponse:
+    statement = select(Enterprise)
+    if report_month:
+        statement = statement.join(EmploymentReport, EmploymentReport.enterprise_id == Enterprise.id).where(EmploymentReport.report_month == report_month)
+    statement = _apply_enterprise_scope(statement, current_user)
+    if filing_status is not None:
+        statement = statement.where(Enterprise.filing_status == filing_status)
+    if region:
+        statement = statement.where(_region_scope_expression(Enterprise.region, region))
+    if name:
+        statement = statement.where(Enterprise.name.contains(name))
+    if organization_code:
+        statement = statement.where(Enterprise.organization_code.contains(organization_code))
+    enterprises = db.scalars(statement.order_by(Enterprise.region, Enterprise.name)).unique().all()
     file_content = export_enterprise_filings_to_xlsx(enterprises)
     return StreamingResponse(BytesIO(file_content), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": 'attachment; filename="enterprise_filings.xlsx"'})
 

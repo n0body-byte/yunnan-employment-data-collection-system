@@ -18,7 +18,9 @@
         <el-form :inline="true" :model="enterpriseQuery" style="margin-bottom:12px">
           <el-form-item label="地区"><el-input v-model="enterpriseQuery.region" clearable /></el-form-item>
           <el-form-item label="企业名称"><el-input v-model="enterpriseQuery.name" clearable /></el-form-item>
+          <el-form-item label="备案状态"><el-select v-model="enterpriseQuery.filing_status" clearable style="width:180px"><el-option label="待审核" value="PENDING" /><el-option label="已通过" value="APPROVED" /><el-option label="已退回" value="REJECTED" /></el-select></el-form-item>
           <el-form-item><el-button type="primary" @click="loadEnterprises">查询</el-button></el-form-item>
+          <el-form-item><el-button @click="exportEnterprises">导出</el-button></el-form-item>
           <el-form-item><el-button @click="resetEnterpriseQuery">清空</el-button></el-form-item>
         </el-form>
         <el-table :data="enterprises" stripe>
@@ -300,7 +302,7 @@ const editingNotificationId = ref<number | null>(null)
 const reasonOptions = ['产业结构调整','重大技术改革','节能减排、淘汰落后产能','订单不足','原材料涨价','工资、社保等用工成本上升','经营资金困难','税收政策变化（包括税负增加或出口退税减少等）','季节性用工','其他','自行离职','工作调动、企业内部调剂','劳动关系转移、劳务派遣','退休','退职','死亡','自然减员','国际因素变化','招不上人来']
 const reductionTypes = ['关闭破产','停业整顿','经济性裁员','业务转移','自然减员','正常解除或终止劳动合同','国际因素变化影响','自然灾害','重大事件影响','其他']
 
-const enterpriseQuery = reactive({ region: '', name: '' })
+const enterpriseQuery = reactive({ region: '', name: '', filing_status: 'PENDING' })
 const reportQuery = reactive({ report_month: '', review_status: '' })
 const userQuery = reactive({ username: '', role: '', region: '' })
 const notificationQuery = reactive({ title: '' })
@@ -312,10 +314,11 @@ const windowForm = reactive({ report_month: '', start_at: '', end_at: '' })
 const revisionForm = reactive({ note: '', baseline_employees: 0, current_employees: 0, reduction_type: '', primary_reason: '', primary_reason_detail: '' })
 
 const loadEnterprises = async () => {
-  const { data } = await http.get('/api/enterprises', { params: { filing_status: 'PENDING', region: enterpriseQuery.region || undefined, name: enterpriseQuery.name || undefined } })
+  const { data } = await http.get('/api/enterprises', { params: { filing_status: enterpriseQuery.filing_status || undefined, region: enterpriseQuery.region || undefined, name: enterpriseQuery.name || undefined } })
   enterprises.value = data
 }
-const resetEnterpriseQuery = async () => { enterpriseQuery.region = ''; enterpriseQuery.name = ''; await loadEnterprises() }
+const exportEnterprises = async () => { const response = await http.get('/api/province/enterprises/export', { params: { filing_status: enterpriseQuery.filing_status || undefined, region: enterpriseQuery.region || undefined, name: enterpriseQuery.name || undefined }, responseType: 'blob' }); downloadBlob(response.data, 'enterprise_filings.xlsx') }
+const resetEnterpriseQuery = async () => { enterpriseQuery.region = ''; enterpriseQuery.name = ''; enterpriseQuery.filing_status = 'PENDING'; await loadEnterprises() }
 const loadReports = async () => {
   const { data } = await http.get('/api/employment-reports', { params: { report_month: reportQuery.report_month || undefined, review_status: reportQuery.review_status || undefined } })
   reports.value = data
