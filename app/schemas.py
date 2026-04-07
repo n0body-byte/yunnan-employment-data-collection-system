@@ -6,7 +6,17 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.enums import AuditAction, FilingStatus, ReductionReason, ReductionType, ReviewStatus, UserRole
+from app.enums import (
+    AnalysisDimension,
+    AuditAction,
+    ExchangeDirection,
+    FilingStatus,
+    PermissionCode,
+    ReductionReason,
+    ReductionType,
+    ReviewStatus,
+    UserRole,
+)
 
 ORGANIZATION_CODE_PATTERN = re.compile(r"^[A-Za-z0-9]{9}$")
 PHONE_PATTERN = re.compile(r"^(?:1[3-9]\d{9}|\(?0\d{2,3}\)?-?\d{7,8})$")
@@ -31,12 +41,54 @@ class LoginResponse(BaseModel):
     token_type: str = "bearer"
     role: UserRole
     region: str
+    managed_role_id: Optional[int] = None
+
+
+class PasswordChangeRequest(BaseModel):
+    old_password: str = Field(..., min_length=8, max_length=128)
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+
+class PermissionRead(BaseModel):
+    code: PermissionCode
+    description: str
+
+
+class ManagedRoleBase(BaseModel):
+    name: str = Field(..., min_length=2, max_length=50)
+    description: Optional[str] = Field(None, max_length=255)
+    scope_role: Optional[UserRole] = None
+    permission_codes: list[PermissionCode] = Field(default_factory=list)
+
+
+class ManagedRoleCreate(ManagedRoleBase):
+    pass
+
+
+class ManagedRoleUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=2, max_length=50)
+    description: Optional[str] = Field(None, max_length=255)
+    scope_role: Optional[UserRole] = None
+    permission_codes: Optional[list[PermissionCode]] = None
+
+
+class ManagedRoleRead(ORMBaseSchema):
+    id: int
+    name: str
+    description: Optional[str]
+    scope_role: Optional[UserRole]
+    is_system: bool
+    created_at: datetime
+    updated_at: datetime
+    permissions: list[PermissionRead] = Field(default_factory=list)
 
 
 class UserBase(BaseModel):
     username: str = Field(..., min_length=3, max_length=50)
     role: UserRole
     region: str = Field(..., min_length=2, max_length=100)
+    managed_role_id: Optional[int] = None
+    is_active: bool = True
 
 
 class UserCreate(UserBase):
@@ -48,6 +100,8 @@ class UserUpdate(BaseModel):
     password: Optional[str] = Field(None, min_length=8, max_length=128)
     role: Optional[UserRole] = None
     region: Optional[str] = Field(None, min_length=2, max_length=100)
+    managed_role_id: Optional[int] = None
+    is_active: Optional[bool] = None
 
 
 class UserRead(ORMBaseSchema):
@@ -55,6 +109,8 @@ class UserRead(ORMBaseSchema):
     username: str
     role: UserRole
     region: str
+    managed_role_id: Optional[int] = None
+    is_active: bool = True
     created_at: datetime
     updated_at: datetime
 
@@ -120,6 +176,13 @@ class EnterpriseFilingSubmit(EnterpriseBase):
 
 class FilingAuditRequest(BaseModel):
     action: AuditAction
+    remark: Optional[str] = Field(None, max_length=500)
+
+    @model_validator(mode="after")
+    def validate_remark(self) -> "FilingAuditRequest":
+        if self.action == AuditAction.REJECT and not self.remark:
+            raise ValueError("remark is required when rejecting a filing")
+        return self
 
 
 class EnterpriseUpdate(BaseModel):
@@ -136,6 +199,7 @@ class EnterpriseUpdate(BaseModel):
     fax: Optional[str] = Field(None, max_length=20)
     email: Optional[str] = None
     filing_status: Optional[FilingStatus] = None
+    filing_audit_remark: Optional[str] = Field(None, max_length=500)
 
     _validate_organization_code = field_validator("organization_code")(EnterpriseBase.validate_organization_code)
     _validate_phone = field_validator("phone")(EnterpriseBase.validate_phone)
@@ -160,11 +224,12 @@ class EnterpriseRead(ORMBaseSchema):
     fax: Optional[str]
     email: Optional[str]
     filing_status: FilingStatus
+    filing_audit_remark: Optional[str]
     created_at: datetime
     updated_at: datetime
 
 
-class EmploymentReportBase(BaseModel):
+class EmploymentReportPayloadMixin(BaseModel):
     baseline_employees: int = Field(..., ge=0)
     current_employees: int = Field(..., ge=0)
     reduction_type: Optional[ReductionType] = None
@@ -172,18 +237,11 @@ class EmploymentReportBase(BaseModel):
     primary_reason_detail: Optional[str] = Field(None, max_length=500)
     secondary_reason: Optional[ReductionReason] = None
     secondary_reason_detail: Optional[str] = Field(None, max_length=500)
-    report_month: str
-    review_status: ReviewStatus = ReviewStatus.DRAFT
-
-    @field_validator("report_month")
-    @classmethod
-    def validate_report_month(cls, value: str) -> str:
-        if not REPORT_MONTH_PATTERN.fullmatch(value):
-            raise ValueError("report_month must use YYYY-MM format")
-        return value
+    third_reason: Optional[ReductionReason] = None
+    third_reason_detail: Optional[str] = Field(None, max_length=500)
 
     @model_validator(mode="after")
-    def validate_reduction_fields(self) -> "EmploymentReportBase":
+    def validate_reduction_fields(self) -> "EmploymentReportPayloadMixin":
         if self.current_employees < self.baseline_employees:
             missing_fields = []
             if self.reduction_type is None:
@@ -200,19 +258,9 @@ class EmploymentReportBase(BaseModel):
         return self
 
 
-class EmploymentReportCreate(EmploymentReportBase):
-    enterprise_id: int
-
-
-class EmploymentReportSubmit(BaseModel):
-    baseline_employees: int = Field(..., ge=0)
-    current_employees: int = Field(..., ge=0)
-    reduction_type: Optional[ReductionType] = None
-    primary_reason: Optional[ReductionReason] = None
-    primary_reason_detail: Optional[str] = Field(None, max_length=500)
-    secondary_reason: Optional[ReductionReason] = None
-    secondary_reason_detail: Optional[str] = Field(None, max_length=500)
+class EmploymentReportBase(EmploymentReportPayloadMixin):
     report_month: str
+    review_status: ReviewStatus = ReviewStatus.DRAFT
 
     @field_validator("report_month")
     @classmethod
@@ -221,19 +269,20 @@ class EmploymentReportSubmit(BaseModel):
             raise ValueError("report_month must use YYYY-MM format")
         return value
 
-    @model_validator(mode="after")
-    def validate_reduction_fields(self) -> "EmploymentReportSubmit":
-        EmploymentReportBase(
-            baseline_employees=self.baseline_employees,
-            current_employees=self.current_employees,
-            reduction_type=self.reduction_type,
-            primary_reason=self.primary_reason,
-            primary_reason_detail=self.primary_reason_detail,
-            secondary_reason=self.secondary_reason,
-            secondary_reason_detail=self.secondary_reason_detail,
-            report_month=self.report_month,
-        )
-        return self
+
+class EmploymentReportCreate(EmploymentReportBase):
+    enterprise_id: int
+
+
+class EmploymentReportSubmit(EmploymentReportPayloadMixin):
+    report_month: str
+
+    @field_validator("report_month")
+    @classmethod
+    def validate_report_month(cls, value: str) -> str:
+        if not REPORT_MONTH_PATTERN.fullmatch(value):
+            raise ValueError("report_month must use YYYY-MM format")
+        return value
 
 
 class EmploymentReportUpdate(BaseModel):
@@ -244,6 +293,8 @@ class EmploymentReportUpdate(BaseModel):
     primary_reason_detail: Optional[str] = Field(None, max_length=500)
     secondary_reason: Optional[ReductionReason] = None
     secondary_reason_detail: Optional[str] = Field(None, max_length=500)
+    third_reason: Optional[ReductionReason] = None
+    third_reason_detail: Optional[str] = Field(None, max_length=500)
     report_month: Optional[str] = None
     review_status: Optional[ReviewStatus] = None
 
@@ -256,11 +307,9 @@ class EmploymentReportUpdate(BaseModel):
 
     @model_validator(mode="after")
     def validate_partial_reduction_fields(self) -> "EmploymentReportUpdate":
-        if (
-            self.baseline_employees is not None
-            and self.current_employees is not None
-            and self.current_employees < self.baseline_employees
-        ):
+        if self.baseline_employees is None or self.current_employees is None:
+            return self
+        if self.current_employees < self.baseline_employees:
             missing_fields = []
             if self.reduction_type is None:
                 missing_fields.append("reduction_type")
@@ -278,6 +327,36 @@ class EmploymentReportUpdate(BaseModel):
 
 class EmploymentReportAuditRequest(BaseModel):
     action: AuditAction
+    remark: Optional[str] = Field(None, max_length=500)
+
+    @model_validator(mode="after")
+    def validate_remark(self) -> "EmploymentReportAuditRequest":
+        if self.action == AuditAction.REJECT and not self.remark:
+            raise ValueError("remark is required when rejecting a report")
+        return self
+
+
+class EmploymentReportRevisionCreate(EmploymentReportPayloadMixin):
+    note: str = Field(..., min_length=1, max_length=500)
+
+
+class EmploymentReportRevisionRead(ORMBaseSchema):
+    id: int
+    report_id: int
+    baseline_employees: int
+    current_employees: int
+    reduction_type: Optional[ReductionType]
+    primary_reason: Optional[ReductionReason]
+    primary_reason_detail: Optional[str]
+    secondary_reason: Optional[ReductionReason]
+    secondary_reason_detail: Optional[str]
+    third_reason: Optional[ReductionReason]
+    third_reason_detail: Optional[str]
+    note: str
+    modified_by_id: int
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
 
 
 class EmploymentReportRead(ORMBaseSchema):
@@ -290,8 +369,17 @@ class EmploymentReportRead(ORMBaseSchema):
     primary_reason_detail: Optional[str]
     secondary_reason: Optional[ReductionReason]
     secondary_reason_detail: Optional[str]
+    third_reason: Optional[ReductionReason]
+    third_reason_detail: Optional[str]
     report_month: str
     review_status: ReviewStatus
+    return_remark: Optional[str]
+    submitted_at: Optional[datetime]
+    city_audited_at: Optional[datetime]
+    province_audited_at: Optional[datetime]
+    reported_to_ministry_at: Optional[datetime]
+    deleted_at: Optional[datetime]
+    delete_remark: Optional[str]
     created_at: datetime
     updated_at: datetime
 
@@ -329,17 +417,17 @@ class ReportingWindowConfigRead(ORMBaseSchema):
 
 
 class NotificationBase(BaseModel):
-    title: str = Field(..., min_length=1, max_length=200)
-    content: str = Field(..., min_length=1)
+    title: str = Field(..., min_length=1, max_length=50)
+    content: str = Field(..., min_length=1, max_length=2000)
 
 
 class NotificationCreate(NotificationBase):
-    publisher_id: int
+    pass
 
 
 class NotificationUpdate(BaseModel):
-    title: Optional[str] = Field(None, min_length=1, max_length=200)
-    content: Optional[str] = Field(None, min_length=1)
+    title: Optional[str] = Field(None, min_length=1, max_length=50)
+    content: Optional[str] = Field(None, min_length=1, max_length=2000)
 
 
 class NotificationRead(ORMBaseSchema):
@@ -348,6 +436,8 @@ class NotificationRead(ORMBaseSchema):
     content: str
     publisher_id: int
     published_at: datetime
+    created_at: datetime
+    updated_at: datetime
 
 
 class ProvinceCityStatisticsRead(BaseModel):
@@ -357,9 +447,51 @@ class ProvinceCityStatisticsRead(BaseModel):
     total_job_changes: int
 
 
+class ProvinceAggregateSummaryRead(BaseModel):
+    report_month: str
+    total_enterprises: int
+    total_baseline_jobs: int
+    total_current_jobs: int
+    total_job_changes: int
+    total_job_reductions: int
+    total_job_change_ratio: float
+
+
+class ComparisonAnalysisRequest(BaseModel):
+    start_month: str
+    end_month: str
+    dimension: AnalysisDimension
+    region: Optional[str] = None
+
+    _validate_start_month = field_validator("start_month")(ReportingWindowConfigBase.validate_report_month)
+    _validate_end_month = field_validator("end_month")(ReportingWindowConfigBase.validate_report_month)
+
+
+class ComparisonAnalysisRowRead(BaseModel):
+    dimension_value: str
+    enterprise_count: int
+    baseline_jobs: int
+    current_jobs: int
+    job_change_total: int
+    job_reduction_total: int
+    job_change_ratio: float
+
+
 class MonthlyJobChangeTrendRead(BaseModel):
     report_month: str
     total_job_changes: int
+    job_change_ratio: float
+
+
+class UserQueryExportRead(ORMBaseSchema):
+    id: int
+    username: str
+    role: UserRole
+    region: str
+    managed_role_id: Optional[int] = None
+    is_active: bool = True
+    created_at: datetime
+    updated_at: datetime
 
 
 class SystemMonitorRead(BaseModel):
@@ -367,3 +499,18 @@ class SystemMonitorRead(BaseModel):
     memory_percent: float
     memory_used_bytes: int
     memory_total_bytes: int
+    disk_percent: float
+    disk_used_bytes: int
+    disk_total_bytes: int
+    app_title: str
+    current_time: datetime
+
+
+class DataExchangeLogRead(ORMBaseSchema):
+    id: int
+    report_month: str
+    direction: ExchangeDirection
+    payload: str
+    initiated_by_id: int
+    created_at: datetime
+    updated_at: datetime

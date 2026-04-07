@@ -68,6 +68,8 @@ class SchemaValidationTests(unittest.TestCase):
             primary_reason_detail="Quarterly orders declined significantly",
             secondary_reason=ReductionReason.LABOR_COST_RISE,
             secondary_reason_detail="Insurance costs increased",
+            third_reason=ReductionReason.RECRUITMENT_DIFFICULTY,
+            third_reason_detail="Workers could not be replaced in time",
             report_month="2023-10",
         )
         self.assertEqual(payload.report_month, "2023-10")
@@ -78,6 +80,9 @@ class SchemaValidationTests(unittest.TestCase):
 
         with self.assertRaises(ValidationError):
             EmploymentReportAuditRequest(action="pass")
+
+        with self.assertRaises(ValidationError):
+            EmploymentReportAuditRequest(action=AuditAction.REJECT)
 
     def test_reporting_window_requires_start_before_end(self) -> None:
         with self.assertRaises(ValidationError):
@@ -95,6 +100,8 @@ class SchemaValidationTests(unittest.TestCase):
             username = "province_admin"
             role = UserRole.PROVINCE
             region = "Yunnan"
+            managed_role_id = None
+            is_active = True
             created_at = now
             updated_at = now
 
@@ -114,6 +121,7 @@ class SchemaValidationTests(unittest.TestCase):
             fax = None
             email = "corp@example.com"
             filing_status = FilingStatus.APPROVED
+            filing_audit_remark = None
             created_at = now
             updated_at = now
 
@@ -123,6 +131,8 @@ class SchemaValidationTests(unittest.TestCase):
             content = "Please complete the monthly report on time."
             publisher_id = 1
             published_at = now
+            created_at = now
+            updated_at = now
 
         user = UserRead.model_validate(UserObj())
         enterprise = EnterpriseRead.model_validate(EnterpriseObj())
@@ -136,7 +146,8 @@ class SchemaValidationTests(unittest.TestCase):
         self.assertEqual(ReviewStatus.PENDING_CITY_REVIEW, "PENDING_CITY_REVIEW")
         self.assertEqual(ReviewStatus.PENDING_PROVINCE_REVIEW, "PENDING_PROVINCE_REVIEW")
         self.assertEqual(ReviewStatus.ARCHIVED, "ARCHIVED")
-        self.assertEqual(len(list(ReductionReason)), 14)
+        self.assertEqual(ReviewStatus.REPORTED_TO_MINISTRY, "REPORTED_TO_MINISTRY")
+        self.assertEqual(len(list(ReductionReason)), 19)
         self.assertEqual(len(list(ReductionType)), 10)
 
 
