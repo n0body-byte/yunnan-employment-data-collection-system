@@ -1,12 +1,10 @@
-import { createRouter, createWebHistory } from 'vue-router'
+﻿import { createRouter, createWebHistory } from 'vue-router'
 
-import CityReviewView from '../views/CityReviewView.vue'
-import EmploymentReportView from '../views/EmploymentReportView.vue'
-import EnterpriseFilingView from '../views/EnterpriseFilingView.vue'
+import CityWorkspaceView from '../views/CityWorkspaceView.vue'
+import EnterpriseWorkspaceView from '../views/EnterpriseWorkspaceView.vue'
 import LoginView from '../views/LoginView.vue'
 import ProvinceDashboardView from '../views/ProvinceDashboardView.vue'
-import ProvinceFilingAuditView from '../views/ProvinceFilingAuditView.vue'
-import SystemMaintenanceView from '../views/SystemMaintenanceView.vue'
+import ProvinceManagementView from '../views/ProvinceManagementView.vue'
 
 type UserRole = 'PROVINCE' | 'CITY' | 'ENTERPRISE'
 
@@ -18,21 +16,15 @@ const routes = [
     meta: { public: true },
   },
   {
-    path: '/enterprise/filing',
-    name: 'enterprise-filing',
-    component: EnterpriseFilingView,
+    path: '/enterprise',
+    name: 'enterprise-workspace',
+    component: EnterpriseWorkspaceView,
     meta: { roles: ['ENTERPRISE'] },
   },
   {
-    path: '/enterprise/report',
-    name: 'enterprise-report',
-    component: EmploymentReportView,
-    meta: { roles: ['ENTERPRISE'] },
-  },
-  {
-    path: '/city/review',
-    name: 'city-review',
-    component: CityReviewView,
+    path: '/city',
+    name: 'city-workspace',
+    component: CityWorkspaceView,
     meta: { roles: ['CITY'] },
   },
   {
@@ -42,17 +34,16 @@ const routes = [
     meta: { roles: ['PROVINCE'] },
   },
   {
-    path: '/province/filing-audit',
-    name: 'province-filing-audit',
-    component: ProvinceFilingAuditView,
+    path: '/province/management',
+    name: 'province-management',
+    component: ProvinceManagementView,
     meta: { roles: ['PROVINCE'] },
   },
-  {
-    path: '/system/maintenance',
-    name: 'system-maintenance',
-    component: SystemMaintenanceView,
-    meta: { roles: ['PROVINCE'] },
-  },
+  { path: '/enterprise/filing', redirect: { name: 'enterprise-workspace' } },
+  { path: '/enterprise/report', redirect: { name: 'enterprise-workspace' } },
+  { path: '/city/review', redirect: { name: 'city-workspace' } },
+  { path: '/province/filing-audit', redirect: { name: 'province-management' } },
+  { path: '/system/maintenance', redirect: { name: 'province-management' } },
 ]
 
 const router = createRouter({
@@ -76,8 +67,8 @@ router.beforeEach((to, _from, next) => {
   const roles = to.meta.roles as UserRole[] | undefined
   if (roles && !roles.includes(role)) {
     const fallbackMap: Record<UserRole, { name: string }> = {
-      ENTERPRISE: { name: 'enterprise-filing' },
-      CITY: { name: 'city-review' },
+      ENTERPRISE: { name: 'enterprise-workspace' },
+      CITY: { name: 'city-workspace' },
       PROVINCE: { name: 'province-dashboard' },
     }
     next(fallbackMap[role])

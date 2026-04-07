@@ -1,10 +1,10 @@
-<template>
+﻿<template>
   <div class="login-page">
-    <el-card shadow="hover">
+    <el-card shadow="hover" style="max-width: 440px; width: 100%">
       <template #header>
         <div>
-          <h2>云南省企业就业失业数据采集系统</h2>
-          <p>请输入账号信息登录系统</p>
+          <h2 style="margin: 0 0 8px">云南省企业就业失业数据采集系统</h2>
+          <p style="margin: 0; color: #606266">请选择角色并登录系统</p>
         </div>
       </template>
 
@@ -59,6 +59,7 @@ interface LoginResponse {
   access_token: string
   token_type?: string
   role: UserRole
+  region?: string
 }
 
 const router = useRouter()
@@ -78,14 +79,13 @@ const rules: FormRules<LoginForm> = {
 }
 
 const roleRouteMap: Record<UserRole, { name: string }> = {
-  ENTERPRISE: { name: 'enterprise-filing' },
-  CITY: { name: 'city-review' },
+  ENTERPRISE: { name: 'enterprise-workspace' },
+  CITY: { name: 'city-workspace' },
   PROVINCE: { name: 'province-dashboard' },
 }
 
 const handleLogin = async () => {
   if (!formRef.value) return
-
   const valid = await formRef.value.validate().catch(() => false)
   if (!valid) return
 
@@ -94,10 +94,11 @@ const handleLogin = async () => {
     const { data } = await http.post<LoginResponse>('/api/auth/login', form)
     localStorage.setItem('access_token', data.access_token)
     localStorage.setItem('user_role', data.role)
+    localStorage.setItem('user_region', data.region ?? '')
     await router.push(roleRouteMap[data.role])
     ElMessage.success('登录成功')
   } catch (error: any) {
-    const message = error?.response?.data?.detail ?? '登录失败，请检查账号信息'
+    const message = error?.response?.data?.detail ?? '登录失败，请检查账号、密码和角色'
     ElMessage.error(message)
   } finally {
     submitting.value = false
