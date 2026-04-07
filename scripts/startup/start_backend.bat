@@ -1,7 +1,8 @@
 @echo off
 setlocal
 
-set "ROOT_DIR=%~dp0"
+set "SCRIPT_DIR=%~dp0"
+for %%I in ("%SCRIPT_DIR%..\..") do set "ROOT_DIR=%%~fI"
 set "CONDA_BAT=%USERPROFILE%\miniconda3\condabin\conda.bat"
 
 if not exist "%CONDA_BAT%" (
@@ -21,4 +22,3 @@ if errorlevel 1 (
 
 echo [INFO] Starting backend on http://127.0.0.1:8000
 uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
-

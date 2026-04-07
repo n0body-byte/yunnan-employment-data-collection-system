@@ -75,14 +75,16 @@ system/
 │     └─ exporters.py       Excel 导出
 ├─ alembic/                 数据库迁移
 ├─ frontend/                Vue 3 前端
-├─ scripts/                 初始化脚本
+├─ scripts/                 初始化与启动脚本
 ├─ tests/                   测试代码
 ├─ submission_materials/    课程提交材料
 ├─ requirements.txt         后端依赖
-├─ start_dev.bat            一键启动前后端
-├─ start_backend.bat        启动后端
-├─ start_frontend.bat       启动前端
-└─ stop_dev.bat             关闭开发窗口
+│  ├─ seed_demo_data.py     演示数据初始化
+│  └─ startup/              启动脚本
+│     ├─ start_dev.bat      一键启动前后端
+│     ├─ start_backend.bat  启动后端
+│     ├─ start_frontend.bat 启动前端
+│     └─ stop_dev.bat       关闭开发窗口
 ```
 
 ## 环境要求
@@ -185,10 +187,10 @@ npm run dev
 ## 一键启动
 项目根目录提供了 Windows 批处理脚本：
 
-- `start_dev.bat`：同时启动前后端
-- `start_backend.bat`：仅启动后端
-- `start_frontend.bat`：仅启动前端
-- `stop_dev.bat`：关闭开发窗口
+- `scripts/startup/start_dev.bat`：同时启动前后端
+- `scripts/startup/start_backend.bat`：仅启动后端
+- `scripts/startup/start_frontend.bat`：仅启动前端
+- `scripts/startup/stop_dev.bat`：关闭开发窗口
 
 如果你的 Conda 安装目录不是默认路径，需要按实际情况修改这些脚本中的 `conda.bat` 路径。
 
