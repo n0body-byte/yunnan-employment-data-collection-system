@@ -505,10 +505,14 @@ def list_users(
     is_active: bool | None = Query(default=None),
     start_date: datetime | None = Query(default=None),
     end_date: datetime | None = Query(default=None),
+    report_month: str | None = Query(default=None),
+    report_quarter: str | None = Query(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission(PermissionCode.USER_MANAGE)),
 ) -> list[User]:
     statement = select(User).outerjoin(Enterprise, Enterprise.owner_user_id == User.id)
+    if report_month or report_quarter:
+        statement = statement.outerjoin(EmploymentReport, EmploymentReport.enterprise_id == Enterprise.id)
     if username:
         statement = statement.where(User.username.contains(username))
     if role is not None:
@@ -529,6 +533,19 @@ def list_users(
         statement = statement.where(User.created_at >= start_date)
     if end_date is not None:
         statement = statement.where(User.created_at <= end_date)
+    if report_month:
+        statement = statement.where(EmploymentReport.report_month == report_month)
+    if report_quarter:
+        quarter_months = {
+            "Q1": ("01", "02", "03"),
+            "Q2": ("04", "05", "06"),
+            "Q3": ("07", "08", "09"),
+            "Q4": ("10", "11", "12"),
+        }
+        year, _, quarter = report_quarter.partition("-")
+        months = quarter_months.get(quarter.upper())
+        if len(year) == 4 and months:
+            statement = statement.where(or_(*[EmploymentReport.report_month == f"{year}-{month}" for month in months]))
     return db.scalars(statement.order_by(User.created_at.desc(), User.id.desc())).unique().all()
 
 
@@ -544,10 +561,14 @@ def export_users(
     is_active: bool | None = Query(default=None),
     start_date: datetime | None = Query(default=None),
     end_date: datetime | None = Query(default=None),
+    report_month: str | None = Query(default=None),
+    report_quarter: str | None = Query(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission(PermissionCode.PROVINCE_DATA_EXPORT, PermissionCode.USER_MANAGE)),
 ) -> StreamingResponse:
     statement = select(User).outerjoin(Enterprise, Enterprise.owner_user_id == User.id)
+    if report_month or report_quarter:
+        statement = statement.outerjoin(EmploymentReport, EmploymentReport.enterprise_id == Enterprise.id)
     if username:
         statement = statement.where(User.username.contains(username))
     if role is not None:
@@ -568,6 +589,19 @@ def export_users(
         statement = statement.where(User.created_at >= start_date)
     if end_date is not None:
         statement = statement.where(User.created_at <= end_date)
+    if report_month:
+        statement = statement.where(EmploymentReport.report_month == report_month)
+    if report_quarter:
+        quarter_months = {
+            "Q1": ("01", "02", "03"),
+            "Q2": ("04", "05", "06"),
+            "Q3": ("07", "08", "09"),
+            "Q4": ("10", "11", "12"),
+        }
+        year, _, quarter = report_quarter.partition("-")
+        months = quarter_months.get(quarter.upper())
+        if len(year) == 4 and months:
+            statement = statement.where(or_(*[EmploymentReport.report_month == f"{year}-{month}" for month in months]))
     users = db.scalars(statement.order_by(User.created_at.desc(), User.id.desc())).unique().all()
     file_content = export_user_list_to_xlsx(users)
     return StreamingResponse(BytesIO(file_content), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": 'attachment; filename="users.xlsx"'})

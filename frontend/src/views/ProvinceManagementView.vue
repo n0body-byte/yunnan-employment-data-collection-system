@@ -80,6 +80,8 @@
           <el-form-item label="企业性质"><el-input v-model="userQuery.nature" clearable /></el-form-item>
           <el-form-item label="所属行业"><el-input v-model="userQuery.industry" clearable /></el-form-item>
           <el-form-item label="启用状态"><el-select v-model="userQuery.is_active" clearable style="width:140px"><el-option label="启用" :value="true" /><el-option label="停用" :value="false" /></el-select></el-form-item>
+          <el-form-item label="统计月份"><el-date-picker v-model="userQuery.report_month" type="month" value-format="YYYY-MM" /></el-form-item>
+          <el-form-item label="统计季度"><el-input v-model="userQuery.report_quarter" placeholder="如 2024-Q1" clearable style="width:140px" /></el-form-item>
           <el-form-item label="开始日期"><el-date-picker v-model="userQuery.start_date" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" /></el-form-item>
           <el-form-item label="结束日期"><el-date-picker v-model="userQuery.end_date" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" /></el-form-item>
           <el-form-item><el-button type="primary" @click="loadUsers">查询</el-button></el-form-item>
@@ -312,7 +314,7 @@ const reductionTypes = ['关闭破产','停业整顿','经济性裁员','业务�
 
 const enterpriseQuery = reactive({ region: '', name: '', filing_status: 'PENDING' })
 const reportQuery = reactive({ report_month: '', review_status: '' })
-const userQuery = reactive({ username: '', role: '', region: '', enterprise_name: '', filing_status: '', nature: '', industry: '', is_active: undefined as boolean | undefined, start_date: '', end_date: '' })
+const userQuery = reactive({ username: '', role: '', region: '', enterprise_name: '', filing_status: '', nature: '', industry: '', is_active: undefined as boolean | undefined, report_month: '', report_quarter: '', start_date: '', end_date: '' })
 const notificationQuery = reactive({ title: '' })
 const exchangeForm = reactive({ report_month: '' })
 const userForm = reactive({ username: '', password: '', role: 'CITY', region: 'Kunming', is_active: true })
@@ -332,7 +334,7 @@ const loadReports = async () => {
   reports.value = data
 }
 const loadUsers = async () => {
-  const { data } = await http.get('/api/users', { params: { username: userQuery.username || undefined, role: userQuery.role || undefined, region: userQuery.region || undefined, enterprise_name: userQuery.enterprise_name || undefined, filing_status: userQuery.filing_status || undefined, nature: userQuery.nature || undefined, industry: userQuery.industry || undefined, is_active: userQuery.is_active, start_date: userQuery.start_date || undefined, end_date: userQuery.end_date || undefined } })
+  const { data } = await http.get('/api/users', { params: { username: userQuery.username || undefined, role: userQuery.role || undefined, region: userQuery.region || undefined, enterprise_name: userQuery.enterprise_name || undefined, filing_status: userQuery.filing_status || undefined, nature: userQuery.nature || undefined, industry: userQuery.industry || undefined, is_active: userQuery.is_active, report_month: userQuery.report_month || undefined, report_quarter: userQuery.report_quarter || undefined, start_date: userQuery.start_date || undefined, end_date: userQuery.end_date || undefined } })
   users.value = data
 }
 const resetUserQuery = async () => {
@@ -344,6 +346,8 @@ const resetUserQuery = async () => {
   userQuery.nature = ''
   userQuery.industry = ''
   userQuery.is_active = undefined
+  userQuery.report_month = ''
+  userQuery.report_quarter = ''
   userQuery.start_date = ''
   userQuery.end_date = ''
   await loadUsers()
@@ -407,7 +411,7 @@ const viewRevisions = async (id: number) => { const { data } = await http.get(`/
 const openUserEditor = (row?: any) => { editingUserId.value = row?.id ?? null; userForm.username = row?.username ?? ''; userForm.password = ''; userForm.role = row?.role ?? 'CITY'; userForm.region = row?.region ?? 'Kunming'; userForm.is_active = row?.is_active ?? true; userEditorVisible.value = true }
 const saveUser = async () => { try { if (editingUserId.value) { await http.put(`/api/users/${editingUserId.value}`, { ...userForm, password: userForm.password || undefined }) } else { await http.post('/api/users', userForm) } ElMessage.success('用户保存成功'); userEditorVisible.value = false; await loadUsers() } catch (error: any) { ElMessage.error(error?.response?.data?.detail ?? '用户保存失败') } }
 const deleteUser = async (id: number) => { try { await http.delete(`/api/users/${id}`); ElMessage.success('用户已删除'); await loadUsers() } catch (error: any) { ElMessage.error(error?.response?.data?.detail ?? '删除失败') } }
-const exportUsers = async () => { const response = await http.get('/api/users/export', { params: { username: userQuery.username || undefined, role: userQuery.role || undefined, region: userQuery.region || undefined, enterprise_name: userQuery.enterprise_name || undefined, filing_status: userQuery.filing_status || undefined, nature: userQuery.nature || undefined, industry: userQuery.industry || undefined, is_active: userQuery.is_active, start_date: userQuery.start_date || undefined, end_date: userQuery.end_date || undefined }, responseType: 'blob' }); downloadBlob(response.data, 'users.xlsx') }
+const exportUsers = async () => { const response = await http.get('/api/users/export', { params: { username: userQuery.username || undefined, role: userQuery.role || undefined, region: userQuery.region || undefined, enterprise_name: userQuery.enterprise_name || undefined, filing_status: userQuery.filing_status || undefined, nature: userQuery.nature || undefined, industry: userQuery.industry || undefined, is_active: userQuery.is_active, report_month: userQuery.report_month || undefined, report_quarter: userQuery.report_quarter || undefined, start_date: userQuery.start_date || undefined, end_date: userQuery.end_date || undefined }, responseType: 'blob' }); downloadBlob(response.data, 'users.xlsx') }
 const openRoleEditor = (row?: any) => { editingRoleId.value = row?.id ?? null; roleForm.name = row?.name ?? ''; roleForm.scope_role = row?.scope_role ?? 'CITY'; roleForm.permission_codes = row?.permissions?.map((item: any) => item.code) ?? []; roleEditorVisible.value = true }
 const saveRole = async () => { try { if (editingRoleId.value) { await http.put(`/api/roles/${editingRoleId.value}`, roleForm) } else { await http.post('/api/roles', roleForm) } ElMessage.success('角色保存成功'); roleEditorVisible.value = false; await loadRoles() } catch (error: any) { ElMessage.error(error?.response?.data?.detail ?? '角色保存失败') } }
 const deleteRole = async (id: number) => { try { await http.delete(`/api/roles/${id}`); ElMessage.success('角色已删除'); await loadRoles() } catch (error: any) { ElMessage.error(error?.response?.data?.detail ?? '删除失败') } }
