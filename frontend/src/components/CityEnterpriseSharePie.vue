@@ -3,7 +3,11 @@
 </template>
 
 <script setup lang="ts">
-import * as echarts from 'echarts'
+import { PieChart } from 'echarts/charts'
+import { LegendComponent, TooltipComponent } from 'echarts/components'
+import { init, use } from 'echarts/core'
+import type { ECharts } from 'echarts/core'
+import { CanvasRenderer } from 'echarts/renderers'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 interface PieItem {
@@ -16,7 +20,9 @@ const props = defineProps<{
 }>()
 
 const chartRef = ref<HTMLDivElement | null>(null)
-let chart: echarts.ECharts | null = null
+let chart: ECharts | null = null
+
+use([PieChart, TooltipComponent, LegendComponent, CanvasRenderer])
 
 const chartData = computed(() =>
   props.items.map((item) => ({
@@ -30,7 +36,7 @@ const renderChart = async () => {
   if (!chartRef.value) return
 
   if (!chart) {
-    chart = echarts.init(chartRef.value)
+    chart = init(chartRef.value)
   }
 
   chart.setOption({
