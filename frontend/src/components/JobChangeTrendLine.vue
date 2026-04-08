@@ -36,17 +36,49 @@ const renderChart = async () => {
     xAxis: {
       type: 'category',
       data: months.value,
+      boundaryGap: false,
+      axisLine: {
+        lineStyle: {
+          color: '#cbd5e1',
+        },
+      },
     },
     yAxis: {
       type: 'value',
       name: '岗位变动数',
+      splitLine: {
+        lineStyle: {
+          color: '#e2e8f0',
+          type: 'dashed',
+        },
+      },
     },
     series: [
       {
         name: '岗位变动趋势',
         type: 'line',
         smooth: true,
-        areaStyle: {},
+        symbolSize: 10,
+        lineStyle: {
+          width: 3,
+          color: '#1f6feb',
+        },
+        itemStyle: {
+          color: '#1f6feb',
+        },
+        areaStyle: {
+          color: {
+            type: 'linear',
+            x: 0,
+            y: 0,
+            x2: 0,
+            y2: 1,
+            colorStops: [
+              { offset: 0, color: 'rgba(31, 111, 235, 0.28)' },
+              { offset: 1, color: 'rgba(31, 111, 235, 0.02)' },
+            ],
+          },
+        },
         data: values.value,
       },
     ],

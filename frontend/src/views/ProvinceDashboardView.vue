@@ -1,91 +1,157 @@
-﻿<template>
-  <el-space direction="vertical" fill size="20">
-    <el-card shadow="never">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:16px">
-        <div>
-          <h2 style="margin:0 0 8px">省级数据总览</h2>
-          <p style="margin:0;color:#606266">查看占比、趋势和调查期对比分析，并进入综合管理页</p>
+<template>
+  <DashboardShell
+    v-model:active-key="activeNav"
+    title="工作台"
+    subtitle="查看全省企业分布、岗位变动趋势和最新上报动态。"
+    :nav-items="navItems"
+    :user-name="currentUserName"
+    user-role="PROVINCE"
+    current-role="PROVINCE"
+    @logout="logout"
+  >
+    <template #header-actions>
+      <el-button round @click="router.push({ name: 'province-management' })">进入综合管理</el-button>
+      <el-button type="primary" round @click="handleExport">导出备案</el-button>
+    </template>
+
+    <template #stats>
+      <DashboardMetricCard eyebrow="企业总数" :value="summary.enterpriseCount" accent="blue" description="已纳入统计企业数量" />
+      <DashboardMetricCard eyebrow="本月上报" :value="summary.reportCount" accent="green" description="最近月份已提交月报数量" />
+      <DashboardMetricCard eyebrow="就业总人数" :value="summary.totalEmployment" accent="orange" description="归档报表累计就业人数" />
+      <DashboardMetricCard eyebrow="待省级审核" :value="summary.pendingCount" accent="red" description="等待终审的月报数量" />
+    </template>
+
+    <section class="workspace-grid">
+      <article class="surface-card">
+        <div class="surface-card__header">
+          <div>
+            <h3>全省岗位变动趋势</h3>
+            <p>展示近 6 个月岗位变动总量。</p>
+          </div>
         </div>
-        <el-space>
-          <el-button @click="router.push({ name: 'province-management' })">进入综合管理</el-button>
-          <el-button type="primary" @click="handleExport">导出企业备案</el-button>
-        </el-space>
-      </div>
-    </el-card>
+        <div class="surface-card__body surface-card__body--compact">
+          <JobChangeTrendLine :items="jobChangeTrend" />
+        </div>
+      </article>
 
-    <el-row :gutter="20">
-      <el-col :span="12"><el-card shadow="never"><template #header>各市企业数量占比</template><CityEnterpriseSharePie :items="cityStats" /></el-card></el-col>
-      <el-col :span="12"><el-card shadow="never"><template #header>近 6 个月岗位变动趋势</template><JobChangeTrendLine :items="jobChangeTrend" /></el-card></el-col>
-    </el-row>
+      <article class="surface-card">
+        <div class="surface-card__header">
+          <div>
+            <h3>各市企业分布</h3>
+            <p>按地市展示企业数量占比。</p>
+          </div>
+        </div>
+        <div class="surface-card__body surface-card__body--compact">
+          <CityEnterpriseSharePie :items="cityStats" />
+        </div>
+      </article>
+    </section>
 
-    <el-card shadow="never">
-      <template #header>对比分析</template>
-      <el-form :inline="true" :model="compareForm">
-        <el-form-item label="起始月份"><el-date-picker v-model="compareForm.start_month" type="month" value-format="YYYY-MM" /></el-form-item>
-        <el-form-item label="结束月份"><el-date-picker v-model="compareForm.end_month" type="month" value-format="YYYY-MM" /></el-form-item>
-        <el-form-item label="分析维度"><el-select v-model="compareForm.dimension" style="width:160px"><el-option label="地区" value="REGION" /><el-option label="企业性质" value="ENTERPRISE_NATURE" /><el-option label="行业" value="INDUSTRY" /></el-select></el-form-item>
-        <el-form-item><el-button type="primary" @click="loadCompare">查询分析</el-button></el-form-item>
-      </el-form>
-      <el-table :data="compareRows" stripe>
-        <el-table-column prop="dimension_value" label="维度值" min-width="160" />
-        <el-table-column prop="enterprise_count" label="企业数" min-width="100" />
-        <el-table-column prop="baseline_jobs" label="基期岗位数" min-width="120" />
-        <el-table-column prop="current_jobs" label="调查期岗位数" min-width="120" />
-        <el-table-column prop="job_change_total" label="岗位变化总数" min-width="120" />
-        <el-table-column prop="job_reduction_total" label="岗位减少总数" min-width="120" />
-        <el-table-column prop="job_change_ratio" label="岗位变化占比" min-width="120" />
-      </el-table>
-    </el-card>
+    <section class="workspace-grid">
+      <article class="surface-card">
+        <div class="surface-card__header">
+          <div>
+            <h3>最近上报记录</h3>
+            <p>优先展示最近提交或审核中的月报。</p>
+          </div>
+          <el-button link type="primary" @click="router.push({ name: 'province-management' })">查看全部</el-button>
+        </div>
+        <div class="surface-card__body">
+          <el-table :data="recentReports" stripe>
+            <el-table-column prop="report_month" label="统计月份" min-width="120" />
+            <el-table-column prop="enterprise_id" label="企业ID" min-width="100" />
+            <el-table-column prop="current_employees" label="调查期人数" min-width="120" />
+            <el-table-column prop="review_status" label="状态" min-width="160">
+              <template #default="{ row }">{{ reviewStatusText(row.review_status) }}</template>
+            </el-table-column>
+          </el-table>
+        </div>
+      </article>
 
-    <el-card shadow="never">
-      <template #header>按地市汇总</template>
-      <el-table :data="cityStats" v-loading="loading" stripe>
-        <el-table-column prop="city" label="地市" min-width="140" />
-        <el-table-column prop="enterprise_count" label="企业数量" min-width="120" />
-        <el-table-column prop="total_employment" label="总就业人数" min-width="140" />
-        <el-table-column prop="total_job_changes" label="岗位变动总数" min-width="140" />
-      </el-table>
-    </el-card>
-  </el-space>
+      <article class="surface-card">
+        <div class="surface-card__header">
+          <div>
+            <h3>各市汇总</h3>
+            <p>按地市统计企业数、就业人数和岗位变动数。</p>
+          </div>
+        </div>
+        <div class="surface-card__body">
+          <el-table :data="cityStats" v-loading="loading" stripe>
+            <el-table-column prop="city" label="地市" min-width="120" />
+            <el-table-column prop="enterprise_count" label="企业数量" min-width="120" />
+            <el-table-column prop="total_employment" label="总就业人数" min-width="130" />
+            <el-table-column prop="total_job_changes" label="岗位变动总数" min-width="140" />
+          </el-table>
+        </div>
+      </article>
+    </section>
+  </DashboardShell>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+
 import http from '../api/http'
+import DashboardMetricCard from '../components/DashboardMetricCard.vue'
+import DashboardShell from '../components/DashboardShell.vue'
 import CityEnterpriseSharePie from '../components/CityEnterpriseSharePie.vue'
 import JobChangeTrendLine from '../components/JobChangeTrendLine.vue'
 
 const router = useRouter()
 const loading = ref(false)
+const activeNav = ref('dashboard')
 const cityStats = ref<any[]>([])
 const jobChangeTrend = ref<any[]>([])
-const compareRows = ref<any[]>([])
-const compareForm = reactive({ start_month: '', end_month: '', dimension: 'REGION' })
+const recentReports = ref<any[]>([])
+const pendingReports = ref<any[]>([])
+
+const currentUserName = localStorage.getItem('username') ?? '管理员'
+
+const navItems = [
+  { key: 'dashboard', label: '工作台' },
+  { key: 'management', label: '综合管理' },
+]
+
+const summary = computed(() => {
+  const enterpriseCount = cityStats.value.reduce((total, item) => total + Number(item.enterprise_count ?? 0), 0)
+  const totalEmployment = cityStats.value.reduce((total, item) => total + Number(item.total_employment ?? 0), 0)
+  const reportCount = recentReports.value.length
+  const pendingCount = pendingReports.value.length
+  return {
+    enterpriseCount: enterpriseCount.toLocaleString(),
+    totalEmployment: totalEmployment.toLocaleString(),
+    reportCount: reportCount.toLocaleString(),
+    pendingCount: pendingCount.toLocaleString(),
+  }
+})
+
+const reviewStatusText = (status: string) => ({
+  PENDING_CITY_REVIEW: '待市级审核',
+  PENDING_PROVINCE_REVIEW: '待省级审核',
+  ARCHIVED: '已归档',
+  REPORTED_TO_MINISTRY: '已上报部级',
+  REJECTED: '已退回',
+}[status] ?? status)
 
 const loadDashboardData = async () => {
   loading.value = true
   try {
-    const [cityStatsResponse, trendResponse] = await Promise.all([
+    const [cityStatsResponse, trendResponse, pendingResponse, reportsResponse] = await Promise.all([
       http.get('/api/province/statistics/by-city'),
       http.get('/api/province/statistics/job-change-trend', { params: { months: 6 } }),
+      http.get('/api/employment-reports', { params: { review_status: 'PENDING_PROVINCE_REVIEW' } }),
+      http.get('/api/employment-reports'),
     ])
     cityStats.value = cityStatsResponse.data
     jobChangeTrend.value = trendResponse.data
+    pendingReports.value = pendingResponse.data
+    recentReports.value = reportsResponse.data.slice(0, 5)
   } catch (error: any) {
     ElMessage.error(error?.response?.data?.detail ?? '加载统计数据失败')
   } finally {
     loading.value = false
-  }
-}
-
-const loadCompare = async () => {
-  try {
-    const { data } = await http.post('/api/province/statistics/compare', compareForm)
-    compareRows.value = data
-  } catch (error: any) {
-    ElMessage.error(error?.response?.data?.detail ?? '对比分析失败')
   }
 }
 
@@ -102,6 +168,17 @@ const handleExport = async () => {
     ElMessage.error(error?.response?.data?.detail ?? '导出失败')
   }
 }
+
+const logout = async () => {
+  localStorage.clear()
+  await router.push({ name: 'login' })
+}
+
+watch(activeNav, (value) => {
+  if (value === 'management') {
+    void router.push({ name: 'province-management' })
+  }
+})
 
 onMounted(loadDashboardData)
 </script>

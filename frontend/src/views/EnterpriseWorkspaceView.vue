@@ -1,81 +1,159 @@
 <template>
-  <el-space direction="vertical" fill size="20">
-    <el-card shadow="never">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap">
-        <div>
-          <h2 style="margin:0 0 8px">企业工作台</h2>
-          <p style="margin:0;color:#606266">完成企业备案、月报填报、历史查询、通知浏览和密码修改。</p>
-        </div>
-        <el-space wrap>
-          <el-tag v-if="enterpriseInfo" :type="statusTagType(enterpriseInfo.filing_status)">备案状态：{{ filingStatusText(enterpriseInfo.filing_status) }}</el-tag>
-          <el-button @click="logout">退出登录</el-button>
-        </el-space>
+  <DashboardShell
+    v-model:active-key="activeNav"
+    title="工作台"
+    subtitle="完成企业备案、月报填报、历史查询和通知浏览。"
+    :nav-items="navItems"
+    :user-name="currentUserName"
+    user-role="ENTERPRISE"
+    current-role="ENTERPRISE"
+    @logout="logout"
+  >
+    <template #stats>
+      <DashboardMetricCard eyebrow="备案状态" :value="filingStatusText(enterpriseInfo?.filing_status ?? 'PENDING')" accent="blue" description="企业基础信息审核结果" />
+      <DashboardMetricCard eyebrow="月报总数" :value="reports.length" accent="green" description="当前账号已提交月报" />
+      <DashboardMetricCard eyebrow="待审核" :value="pendingCount" accent="orange" description="待市级或省级审核的月报" />
+      <DashboardMetricCard eyebrow="通知公告" :value="notifications.length" accent="red" description="可浏览的系统通知数量" />
+    </template>
+
+    <section v-if="activeNav === 'overview'" class="workspace-stack">
+      <div class="workspace-grid">
+        <article class="surface-card">
+          <div class="surface-card__header">
+            <div>
+              <h3>企业概况</h3>
+              <p>查看当前备案状态和基础信息。</p>
+            </div>
+            <el-tag :type="statusTagType(enterpriseInfo?.filing_status ?? 'PENDING')">
+              {{ filingStatusText(enterpriseInfo?.filing_status ?? 'PENDING') }}
+            </el-tag>
+          </div>
+          <div class="surface-card__body">
+            <el-descriptions :column="2" border>
+              <el-descriptions-item label="企业名称">{{ enterpriseInfo?.name || '未备案' }}</el-descriptions-item>
+              <el-descriptions-item label="所属地区">{{ enterpriseInfo?.region || currentRegion }}</el-descriptions-item>
+              <el-descriptions-item label="组织机构代码">{{ enterpriseInfo?.organization_code || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="所属行业">{{ enterpriseInfo?.industry || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="联系人">{{ enterpriseInfo?.contact_person || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="联系电话">{{ enterpriseInfo?.phone || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="退回说明" :span="2">{{ enterpriseInfo?.filing_audit_remark || '无' }}</el-descriptions-item>
+            </el-descriptions>
+          </div>
+        </article>
+
+        <article class="surface-card">
+          <div class="surface-card__header">
+            <div>
+              <h3>上报提醒</h3>
+              <p>查看当前月份的上报时限和处理建议。</p>
+            </div>
+          </div>
+          <div class="surface-card__body">
+            <el-alert :title="windowTip" :type="windowTipType" :closable="false" />
+            <div style="margin-top:18px;display:grid;gap:12px">
+              <el-button type="primary" round @click="activeNav = 'report'">立即填报月报</el-button>
+              <el-button round @click="activeNav = 'filing'">完善备案信息</el-button>
+              <el-button round @click="activeNav = 'history'">查看历史记录</el-button>
+            </div>
+          </div>
+        </article>
       </div>
-    </el-card>
 
-    <el-card v-if="enterpriseInfo" shadow="never">
-      <el-descriptions :column="2" border>
-        <el-descriptions-item label="企业名称">{{ enterpriseInfo.name || '未备案' }}</el-descriptions-item>
-        <el-descriptions-item label="所属地区">{{ enterpriseInfo.region }}</el-descriptions-item>
-        <el-descriptions-item label="组织机构代码">{{ enterpriseInfo.organization_code || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="备案状态">{{ filingStatusText(enterpriseInfo.filing_status) }}</el-descriptions-item>
-        <el-descriptions-item label="所属行业">{{ enterpriseInfo.industry || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="联系人电话">{{ enterpriseInfo.phone || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="退回说明" :span="2">{{ enterpriseInfo.filing_audit_remark || '无' }}</el-descriptions-item>
-      </el-descriptions>
-    </el-card>
+      <article class="surface-card">
+        <div class="surface-card__header">
+          <div>
+            <h3>最近上报记录</h3>
+            <p>展示当前账号最近提交的月报。</p>
+          </div>
+          <el-button link type="primary" @click="activeNav = 'history'">查看全部</el-button>
+        </div>
+        <div class="surface-card__body">
+          <el-table :data="reports.slice(0, 5)" stripe>
+            <el-table-column prop="report_month" label="统计月份" min-width="120" />
+            <el-table-column prop="baseline_employees" label="建档期人数" min-width="120" />
+            <el-table-column prop="current_employees" label="调查期人数" min-width="120" />
+            <el-table-column prop="review_status" label="状态" min-width="160">
+              <template #default="{ row }">{{ reviewStatusText(row.review_status) }}</template>
+            </el-table-column>
+            <el-table-column prop="return_remark" label="退回说明" min-width="220" />
+          </el-table>
+        </div>
+      </article>
+    </section>
 
-    <el-tabs v-model="activeTab" type="border-card">
-      <el-tab-pane label="企业备案" name="filing">
+    <article v-else-if="activeNav === 'filing'" class="surface-card">
+      <div class="surface-card__header">
+        <div>
+          <h3>企业信息备案</h3>
+          <p>按要求完善企业基础信息并提交审核。</p>
+        </div>
+      </div>
+      <div class="surface-card__body">
         <el-form ref="filingFormRef" :model="filingForm" :rules="filingRules" label-width="120px">
           <el-row :gutter="16">
-            <el-col :span="12"><el-form-item label="所属地区" prop="region"><el-input v-model="filingForm.region" disabled /></el-form-item></el-col>
-            <el-col :span="12"><el-form-item label="组织机构代码" prop="organization_code"><el-input v-model="filingForm.organization_code" maxlength="9" show-word-limit /></el-form-item></el-col>
-            <el-col :span="12"><el-form-item label="企业名称" prop="name"><el-input v-model="filingForm.name" /></el-form-item></el-col>
-            <el-col :span="12"><el-form-item label="企业性质" prop="nature"><el-select v-model="filingForm.nature" placeholder="请选择企业性质" style="width:100%"><el-option v-for="item in enterpriseNatureOptions" :key="item" :label="item" :value="item" /></el-select></el-form-item></el-col>
-            <el-col :span="12"><el-form-item label="所属行业" prop="industry_path"><el-cascader v-model="filingForm.industry_path" :options="industryOptions" :props="{ checkStrictly: false }" clearable style="width:100%" /></el-form-item></el-col>
-            <el-col :span="12"><el-form-item label="主要经营业务" prop="main_business"><el-input v-model="filingForm.main_business" type="textarea" :rows="3" /></el-form-item></el-col>
-            <el-col :span="12"><el-form-item label="联系人" prop="contact_person"><el-input v-model="filingForm.contact_person" /></el-form-item></el-col>
-            <el-col :span="12"><el-form-item label="联系电话" prop="phone"><el-input v-model="filingForm.phone" /></el-form-item></el-col>
-            <el-col :span="12"><el-form-item label="联系地址" prop="address"><el-input v-model="filingForm.address" /></el-form-item></el-col>
-            <el-col :span="12"><el-form-item label="邮政编码" prop="postal_code"><el-input v-model="filingForm.postal_code" maxlength="6" /></el-form-item></el-col>
-            <el-col :span="12"><el-form-item label="传真" prop="fax"><el-input v-model="filingForm.fax" /></el-form-item></el-col>
-            <el-col :span="12"><el-form-item label="邮箱" prop="email"><el-input v-model="filingForm.email" /></el-form-item></el-col>
+            <el-col :xs="24" :md="12"><el-form-item label="所属地区" prop="region"><el-input v-model="filingForm.region" disabled /></el-form-item></el-col>
+            <el-col :xs="24" :md="12"><el-form-item label="组织机构代码" prop="organization_code"><el-input v-model="filingForm.organization_code" maxlength="9" show-word-limit /></el-form-item></el-col>
+            <el-col :xs="24" :md="12"><el-form-item label="企业名称" prop="name"><el-input v-model="filingForm.name" /></el-form-item></el-col>
+            <el-col :xs="24" :md="12"><el-form-item label="企业性质" prop="nature"><el-select v-model="filingForm.nature" placeholder="请选择企业性质" style="width:100%"><el-option v-for="item in enterpriseNatureOptions" :key="item" :label="item" :value="item" /></el-select></el-form-item></el-col>
+            <el-col :xs="24" :md="12"><el-form-item label="所属行业" prop="industry_path"><el-cascader v-model="filingForm.industry_path" :options="industryOptions" clearable style="width:100%" /></el-form-item></el-col>
+            <el-col :xs="24" :md="12"><el-form-item label="主营业务" prop="main_business"><el-input v-model="filingForm.main_business" type="textarea" :rows="3" /></el-form-item></el-col>
+            <el-col :xs="24" :md="12"><el-form-item label="联系人" prop="contact_person"><el-input v-model="filingForm.contact_person" /></el-form-item></el-col>
+            <el-col :xs="24" :md="12"><el-form-item label="联系电话" prop="phone"><el-input v-model="filingForm.phone" /></el-form-item></el-col>
+            <el-col :xs="24" :md="12"><el-form-item label="联系地址" prop="address"><el-input v-model="filingForm.address" /></el-form-item></el-col>
+            <el-col :xs="24" :md="12"><el-form-item label="邮政编码" prop="postal_code"><el-input v-model="filingForm.postal_code" maxlength="6" /></el-form-item></el-col>
+            <el-col :xs="24" :md="12"><el-form-item label="传真" prop="fax"><el-input v-model="filingForm.fax" /></el-form-item></el-col>
+            <el-col :xs="24" :md="12"><el-form-item label="邮箱" prop="email"><el-input v-model="filingForm.email" /></el-form-item></el-col>
           </el-row>
           <el-space wrap>
             <el-button type="primary" :loading="filingSubmitting" @click="submitFiling">提交备案</el-button>
-            <el-button @click="loadEnterprise">重新载入</el-button>
-            <el-tag v-if="enterpriseInfo" :type="statusTagType(enterpriseInfo.filing_status)">{{ filingStatusText(enterpriseInfo.filing_status) }}</el-tag>
-            <span v-if="enterpriseInfo?.filing_audit_remark" style="color:#e6a23c">退回说明：{{ enterpriseInfo.filing_audit_remark }}</span>
+            <el-button @click="loadEnterprise">重新加载</el-button>
           </el-space>
         </el-form>
-      </el-tab-pane>
+      </div>
+    </article>
 
-      <el-tab-pane label="月报填报" name="report">
-        <el-alert v-if="windowTip" :title="windowTip" :type="windowTipType" :closable="false" style="margin-bottom:12px" />
+    <article v-else-if="activeNav === 'report'" class="surface-card">
+      <div class="surface-card__header">
+        <div>
+          <h3>月度数据填报</h3>
+          <p>调查期人数低于建档期人数时，系统会自动要求填写减少类型和原因。</p>
+        </div>
+      </div>
+      <div class="surface-card__body">
+        <el-alert :title="windowTip" :type="windowTipType" :closable="false" style="margin-bottom:18px" />
         <el-form ref="reportFormRef" :model="reportForm" :rules="reportRules" label-width="130px">
           <el-row :gutter="16">
-            <el-col :span="12"><el-form-item label="统计月份" prop="report_month"><el-date-picker v-model="reportForm.report_month" type="month" value-format="YYYY-MM" style="width:100%" /></el-form-item></el-col>
-            <el-col :span="12"><el-form-item label="建档期就业人数" prop="baseline_employees"><el-input-number v-model="reportForm.baseline_employees" :min="0" style="width:100%" /></el-form-item></el-col>
-            <el-col :span="12"><el-form-item label="调查期就业人数" prop="current_employees"><el-input-number v-model="reportForm.current_employees" :min="0" style="width:100%" /></el-form-item></el-col>
+            <el-col :xs="24" :md="12"><el-form-item label="统计月份" prop="report_month"><el-date-picker v-model="reportForm.report_month" type="month" value-format="YYYY-MM" style="width:100%" /></el-form-item></el-col>
+            <el-col :xs="24" :md="12"><el-form-item label="建档期人数" prop="baseline_employees"><el-input-number v-model="reportForm.baseline_employees" :min="0" style="width:100%" /></el-form-item></el-col>
+            <el-col :xs="24" :md="12"><el-form-item label="调查期人数" prop="current_employees"><el-input-number v-model="reportForm.current_employees" :min="0" style="width:100%" /></el-form-item></el-col>
           </el-row>
+
           <el-row v-if="showReductionFields" :gutter="16">
-            <el-col :span="12"><el-form-item label="减少类型" prop="reduction_type"><el-select v-model="reportForm.reduction_type" style="width:100%"><el-option v-for="item in reductionTypeOptions" :key="item" :label="item" :value="item" /></el-select></el-form-item></el-col>
-            <el-col :span="12"><el-form-item label="主要原因" prop="primary_reason"><el-select v-model="reportForm.primary_reason" style="width:100%"><el-option v-for="item in reasonOptions" :key="item" :label="item" :value="item" /></el-select></el-form-item></el-col>
-            <el-col :span="12"><el-form-item label="主要原因说明" prop="primary_reason_detail"><el-input v-model="reportForm.primary_reason_detail" type="textarea" :rows="3" /></el-form-item></el-col>
-            <el-col :span="12"><el-form-item label="次要原因"><el-select v-model="reportForm.secondary_reason" clearable style="width:100%"><el-option v-for="item in reasonOptions" :key="item" :label="item" :value="item" /></el-select></el-form-item></el-col>
-            <el-col :span="12"><el-form-item label="次要原因说明"><el-input v-model="reportForm.secondary_reason_detail" type="textarea" :rows="3" /></el-form-item></el-col>
-            <el-col :span="12"><el-form-item label="第三原因"><el-select v-model="reportForm.third_reason" clearable style="width:100%"><el-option v-for="item in reasonOptions" :key="item" :label="item" :value="item" /></el-select></el-form-item></el-col>
-            <el-col :span="12"><el-form-item label="第三原因说明"><el-input v-model="reportForm.third_reason_detail" type="textarea" :rows="3" /></el-form-item></el-col>
+            <el-col :xs="24" :md="12"><el-form-item label="减少类型" prop="reduction_type"><el-select v-model="reportForm.reduction_type" style="width:100%"><el-option v-for="item in reductionTypeOptions" :key="item" :label="item" :value="item" /></el-select></el-form-item></el-col>
+            <el-col :xs="24" :md="12"><el-form-item label="主要原因" prop="primary_reason"><el-select v-model="reportForm.primary_reason" style="width:100%"><el-option v-for="item in reasonOptions" :key="item" :label="item" :value="item" /></el-select></el-form-item></el-col>
+            <el-col :xs="24" :md="12"><el-form-item label="主要原因说明" prop="primary_reason_detail"><el-input v-model="reportForm.primary_reason_detail" type="textarea" :rows="3" /></el-form-item></el-col>
+            <el-col :xs="24" :md="12"><el-form-item label="次要原因"><el-select v-model="reportForm.secondary_reason" clearable style="width:100%"><el-option v-for="item in reasonOptions" :key="item" :label="item" :value="item" /></el-select></el-form-item></el-col>
+            <el-col :xs="24" :md="12"><el-form-item label="次要原因说明"><el-input v-model="reportForm.secondary_reason_detail" type="textarea" :rows="3" /></el-form-item></el-col>
+            <el-col :xs="24" :md="12"><el-form-item label="第三原因"><el-select v-model="reportForm.third_reason" clearable style="width:100%"><el-option v-for="item in reasonOptions" :key="item" :label="item" :value="item" /></el-select></el-form-item></el-col>
+            <el-col :xs="24" :md="12"><el-form-item label="第三原因说明"><el-input v-model="reportForm.third_reason_detail" type="textarea" :rows="3" /></el-form-item></el-col>
           </el-row>
+
           <el-space>
             <el-button type="primary" :loading="reportSubmitting" @click="submitReport">提交月报</el-button>
             <el-button @click="resetReportForm">重置</el-button>
           </el-space>
         </el-form>
-      </el-tab-pane>
+      </div>
+    </article>
 
-      <el-tab-pane label="历史查询" name="history">
+    <article v-else-if="activeNav === 'history'" class="surface-card">
+      <div class="surface-card__header">
+        <div>
+          <h3>历史记录</h3>
+          <p>按月份和审核状态筛选已提交的月报。</p>
+        </div>
+      </div>
+      <div class="surface-card__body">
         <el-form :inline="true" :model="historyQuery" style="margin-bottom:12px">
           <el-form-item label="统计月份"><el-date-picker v-model="historyQuery.report_month" type="month" value-format="YYYY-MM" /></el-form-item>
           <el-form-item label="审核状态"><el-select v-model="historyQuery.review_status" clearable style="width:180px"><el-option v-for="item in reviewStatusOptions" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
@@ -86,33 +164,51 @@
           <el-table-column prop="report_month" label="统计月份" min-width="120" />
           <el-table-column prop="baseline_employees" label="建档期人数" min-width="120" />
           <el-table-column prop="current_employees" label="调查期人数" min-width="120" />
-          <el-table-column prop="review_status" label="审核状态" min-width="180">
-            <template #default="scope">{{ reviewStatusText(scope.row.review_status) }}</template>
+          <el-table-column prop="review_status" label="审核状态" min-width="160">
+            <template #default="{ row }">{{ reviewStatusText(row.review_status) }}</template>
           </el-table-column>
           <el-table-column prop="return_remark" label="退回说明" min-width="220" />
           <el-table-column label="操作" min-width="100">
-            <template #default="scope"><el-button type="primary" link @click="openReportDetail(scope.row)">查看</el-button></template>
+            <template #default="{ row }">
+              <el-button type="primary" link @click="openReportDetail(row)">查看</el-button>
+            </template>
           </el-table-column>
         </el-table>
-      </el-tab-pane>
+      </div>
+    </article>
 
-      <el-tab-pane label="通知浏览" name="notifications">
-        <el-button type="primary" plain style="margin-bottom:12px" @click="loadNotifications">刷新通知</el-button>
+    <article v-else-if="activeNav === 'notifications'" class="surface-card">
+      <div class="surface-card__header">
+        <div>
+          <h3>通知公告</h3>
+          <p>查看市级和省级发布的最新通知。</p>
+        </div>
+        <el-button round @click="loadNotifications">刷新通知</el-button>
+      </div>
+      <div class="surface-card__body">
         <el-table :data="notifications" stripe>
           <el-table-column prop="title" label="标题" min-width="180" />
           <el-table-column prop="published_at" label="发布时间" min-width="180" />
           <el-table-column prop="content" label="内容" min-width="360" />
         </el-table>
-      </el-tab-pane>
+      </div>
+    </article>
 
-      <el-tab-pane label="修改密码" name="password">
+    <article v-else class="surface-card">
+      <div class="surface-card__header">
+        <div>
+          <h3>账户安全</h3>
+          <p>定期修改密码，确保账号安全。</p>
+        </div>
+      </div>
+      <div class="surface-card__body" style="max-width:560px">
         <el-form ref="passwordFormRef" :model="passwordForm" label-width="100px">
           <el-form-item label="旧密码"><el-input v-model="passwordForm.old_password" type="password" show-password /></el-form-item>
           <el-form-item label="新密码"><el-input v-model="passwordForm.new_password" type="password" show-password /></el-form-item>
           <el-button type="primary" @click="changePassword">修改密码</el-button>
         </el-form>
-      </el-tab-pane>
-    </el-tabs>
+      </div>
+    </article>
 
     <el-drawer v-model="reportDetailVisible" title="月报详情" size="520px">
       <el-descriptions v-if="selectedReport" :column="1" border>
@@ -128,17 +224,20 @@
         <el-descriptions-item label="退回说明">{{ selectedReport.return_remark || '无' }}</el-descriptions-item>
       </el-descriptions>
     </el-drawer>
-  </el-space>
+  </DashboardShell>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
+
 import http from '../api/http'
+import DashboardMetricCard from '../components/DashboardMetricCard.vue'
+import DashboardShell from '../components/DashboardShell.vue'
 
 const router = useRouter()
-const activeTab = ref('filing')
+const activeNav = ref('overview')
 const filingFormRef = ref<FormInstance>()
 const reportFormRef = ref<FormInstance>()
 const passwordFormRef = ref<FormInstance>()
@@ -151,6 +250,16 @@ const selectedReport = ref<any>(null)
 const reportDetailVisible = ref(false)
 const windowInfo = ref<any>(null)
 const currentRegion = localStorage.getItem('user_region') ?? 'Kunming'
+const currentUserName = localStorage.getItem('username') ?? '企业用户'
+
+const navItems = computed(() => [
+  { key: 'overview', label: '工作台' },
+  { key: 'filing', label: '企业备案' },
+  { key: 'report', label: '数据填报' },
+  { key: 'history', label: '历史记录' },
+  { key: 'notifications', label: '通知公告', badge: notifications.value.length || undefined },
+  { key: 'password', label: '账户安全' },
+])
 
 const enterpriseNatureOptions = ['国有企业', '集体企业', '私营企业', '股份制企业', '外商投资企业', '港澳台投资企业', '其他企业']
 const industryOptions = [
@@ -185,11 +294,23 @@ const filingForm = reactive({
   fax: '',
   email: '',
 })
-const reportForm = reactive({ report_month: '', baseline_employees: 0, current_employees: 0, reduction_type: '', primary_reason: '', primary_reason_detail: '', secondary_reason: '', secondary_reason_detail: '', third_reason: '', third_reason_detail: '' })
+const reportForm = reactive({
+  report_month: '',
+  baseline_employees: 0,
+  current_employees: 0,
+  reduction_type: '',
+  primary_reason: '',
+  primary_reason_detail: '',
+  secondary_reason: '',
+  secondary_reason_detail: '',
+  third_reason: '',
+  third_reason_detail: '',
+})
 const historyQuery = reactive({ report_month: '', review_status: '' })
 const passwordForm = reactive({ old_password: '', new_password: '' })
 
 const showReductionFields = computed(() => reportForm.current_employees < reportForm.baseline_employees)
+const pendingCount = computed(() => reports.value.filter((item) => ['PENDING_CITY_REVIEW', 'PENDING_PROVINCE_REVIEW'].includes(item.review_status)).length)
 const windowTip = computed(() => {
   if (!reportForm.report_month) return '请选择统计月份后查看该月上报时限。'
   if (windowInfo.value === null) return '当前月份尚未配置上报时限，提交前请联系省级管理员。'
@@ -198,7 +319,7 @@ const windowTip = computed(() => {
 const windowTipType = computed(() => windowInfo.value === null ? 'warning' : 'info')
 
 const organizationCodeValidator = (_rule: any, value: string, callback: (error?: Error) => void) => {
-  if (!/^[A-Za-z0-9]{9}$/.test(value)) callback(new Error('组织机构代码必须为9位字母或数字'))
+  if (!/^[A-Za-z0-9]{9}$/.test(value)) callback(new Error('组织机构代码必须是 9 位字母或数字'))
   else callback()
 }
 const phoneValidator = (_rule: any, value: string, callback: (error?: Error) => void) => {
@@ -206,7 +327,7 @@ const phoneValidator = (_rule: any, value: string, callback: (error?: Error) => 
   else callback()
 }
 const postalValidator = (_rule: any, value: string, callback: (error?: Error) => void) => {
-  if (!/^\d{6}$/.test(value)) callback(new Error('邮政编码必须为6位数字'))
+  if (!/^\d{6}$/.test(value)) callback(new Error('邮政编码必须是 6 位数字'))
   else callback()
 }
 
@@ -215,7 +336,7 @@ const filingRules: FormRules = {
   name: [{ required: true, message: '请输入企业名称', trigger: 'blur' }],
   nature: [{ required: true, message: '请选择企业性质', trigger: 'change' }],
   industry_path: [{ required: true, message: '请选择所属行业', trigger: 'change' }],
-  main_business: [{ required: true, message: '请输入主要经营业务', trigger: 'blur' }],
+  main_business: [{ required: true, message: '请输入主营业务', trigger: 'blur' }],
   contact_person: [{ required: true, message: '请输入联系人', trigger: 'blur' }],
   phone: [{ required: true, message: '请输入联系电话', trigger: 'blur' }, { validator: phoneValidator, trigger: 'blur' }],
   address: [{ required: true, message: '请输入联系地址', trigger: 'blur' }],
@@ -225,13 +346,19 @@ const reportRules: FormRules = {
   report_month: [{ required: true, message: '请选择统计月份', trigger: 'change' }],
   baseline_employees: [{ required: true, message: '请输入建档期人数', trigger: 'change' }],
   current_employees: [{ required: true, message: '请输入调查期人数', trigger: 'change' }],
-  reduction_type: [{ validator: (_r, v, cb) => showReductionFields.value && !v ? cb(new Error('人数下降时必须填写减少类型')) : cb(), trigger: 'change' }],
-  primary_reason: [{ validator: (_r, v, cb) => showReductionFields.value && !v ? cb(new Error('人数下降时必须填写主要原因')) : cb(), trigger: 'change' }],
-  primary_reason_detail: [{ validator: (_r, v, cb) => showReductionFields.value && !v ? cb(new Error('人数下降时必须填写主要原因说明')) : cb(), trigger: 'blur' }],
+  reduction_type: [{ validator: (_r, value, cb) => showReductionFields.value && !value ? cb(new Error('人数下降时必须填写减少类型')) : cb(), trigger: 'change' }],
+  primary_reason: [{ validator: (_r, value, cb) => showReductionFields.value && !value ? cb(new Error('人数下降时必须填写主要原因')) : cb(), trigger: 'change' }],
+  primary_reason_detail: [{ validator: (_r, value, cb) => showReductionFields.value && !value ? cb(new Error('人数下降时必须填写主要原因说明')) : cb(), trigger: 'blur' }],
 }
 
 const filingStatusText = (status: string) => ({ PENDING: '待审核', APPROVED: '已通过', REJECTED: '已退回' }[status] ?? status)
-const reviewStatusText = (status: string) => ({ PENDING_CITY_REVIEW: '待市级审核', PENDING_PROVINCE_REVIEW: '待省级审核', ARCHIVED: '已归档', REPORTED_TO_MINISTRY: '已上报部级', REJECTED: '已退回' }[status] ?? status)
+const reviewStatusText = (status: string) => ({
+  PENDING_CITY_REVIEW: '待市级审核',
+  PENDING_PROVINCE_REVIEW: '待省级审核',
+  ARCHIVED: '已归档',
+  REPORTED_TO_MINISTRY: '已上报部级',
+  REJECTED: '已退回',
+}[status] ?? status)
 const statusTagType = (status: string) => status === 'APPROVED' ? 'success' : status === 'REJECTED' ? 'danger' : 'warning'
 
 const applyEnterpriseToForm = (data: any) => {
@@ -261,6 +388,7 @@ const loadEnterprise = async () => {
     enterpriseInfo.value = { region: currentRegion, filing_status: 'PENDING', filing_audit_remark: '' }
   }
 }
+
 const loadReports = async () => {
   const params = {
     report_month: historyQuery.report_month || undefined,
@@ -269,10 +397,12 @@ const loadReports = async () => {
   const { data } = await http.get('/api/employment-reports', { params })
   reports.value = data
 }
+
 const loadNotifications = async () => {
   const { data } = await http.get('/api/notifications/browse')
   notifications.value = data
 }
+
 const loadReportingWindow = async (reportMonth: string) => {
   if (!reportMonth) {
     windowInfo.value = null
@@ -290,6 +420,7 @@ const loadReportingWindow = async (reportMonth: string) => {
     ElMessage.error(error?.response?.data?.detail ?? '上报时限查询失败')
   }
 }
+
 const submitFiling = async () => {
   if (!filingFormRef.value) return
   const valid = await filingFormRef.value.validate().catch(() => false)
@@ -320,6 +451,7 @@ const submitFiling = async () => {
     filingSubmitting.value = false
   }
 }
+
 const submitReport = async () => {
   if (!reportFormRef.value) return
   const valid = await reportFormRef.value.validate().catch(() => false)
@@ -339,12 +471,14 @@ const submitReport = async () => {
     ElMessage.success('月报提交成功')
     resetReportForm()
     await loadReports()
+    activeNav.value = 'history'
   } catch (error: any) {
     ElMessage.error(error?.response?.data?.detail ?? '月报提交失败')
   } finally {
     reportSubmitting.value = false
   }
 }
+
 const resetReportForm = () => {
   reportForm.report_month = ''
   reportForm.baseline_employees = 0
@@ -358,15 +492,18 @@ const resetReportForm = () => {
   reportForm.third_reason_detail = ''
   windowInfo.value = null
 }
+
 const resetHistoryQuery = async () => {
   historyQuery.report_month = ''
   historyQuery.review_status = ''
   await loadReports()
 }
+
 const openReportDetail = (row: any) => {
   selectedReport.value = row
   reportDetailVisible.value = true
 }
+
 const changePassword = async () => {
   try {
     await http.post('/api/auth/change-password', passwordForm)
@@ -377,6 +514,7 @@ const changePassword = async () => {
     ElMessage.error(error?.response?.data?.detail ?? '密码修改失败')
   }
 }
+
 const logout = async () => {
   localStorage.clear()
   await router.push({ name: 'login' })

@@ -34,12 +34,14 @@ const renderChart = async () => {
   }
 
   chart.setOption({
+    color: ['#1f6feb', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#0ea5e9'],
     tooltip: {
       trigger: 'item',
-      formatter: '{b}<br/>企业数: {c}<br/>占比: {d}%'
+      formatter: '{b}<br/>企业数: {c}<br/>占比: {d}%',
     },
     legend: {
       bottom: 0,
+      icon: 'circle',
     },
     series: [
       {
@@ -47,6 +49,11 @@ const renderChart = async () => {
         type: 'pie',
         radius: ['40%', '70%'],
         avoidLabelOverlap: true,
+        itemStyle: {
+          borderColor: '#ffffff',
+          borderWidth: 6,
+          borderRadius: 14,
+        },
         data: chartData.value,
       },
     ],
