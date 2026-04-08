@@ -1,10 +1,4 @@
-﻿import { createRouter, createWebHistory } from 'vue-router'
-
-import CityWorkspaceView from '../views/CityWorkspaceView.vue'
-import EnterpriseWorkspaceView from '../views/EnterpriseWorkspaceView.vue'
-import LoginView from '../views/LoginView.vue'
-import ProvinceDashboardView from '../views/ProvinceDashboardView.vue'
-import ProvinceManagementView from '../views/ProvinceManagementView.vue'
+import { createRouter, createWebHistory } from 'vue-router'
 
 type UserRole = 'PROVINCE' | 'CITY' | 'ENTERPRISE'
 
@@ -12,31 +6,31 @@ const routes = [
   {
     path: '/',
     name: 'login',
-    component: LoginView,
+    component: () => import('../views/LoginView.vue'),
     meta: { public: true },
   },
   {
     path: '/enterprise',
     name: 'enterprise-workspace',
-    component: EnterpriseWorkspaceView,
+    component: () => import('../views/EnterpriseWorkspaceView.vue'),
     meta: { roles: ['ENTERPRISE'] },
   },
   {
     path: '/city',
     name: 'city-workspace',
-    component: CityWorkspaceView,
+    component: () => import('../views/CityWorkspaceView.vue'),
     meta: { roles: ['CITY'] },
   },
   {
     path: '/province/dashboard',
     name: 'province-dashboard',
-    component: ProvinceDashboardView,
+    component: () => import('../views/ProvinceDashboardView.vue'),
     meta: { roles: ['PROVINCE'] },
   },
   {
     path: '/province/management',
     name: 'province-management',
-    component: ProvinceManagementView,
+    component: () => import('../views/ProvinceManagementView.vue'),
     meta: { roles: ['PROVINCE'] },
   },
   { path: '/enterprise/filing', redirect: { name: 'enterprise-workspace' } },
