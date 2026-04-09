@@ -967,9 +967,4 @@ onMounted(async () => {
   min-height: 46px;
   font-size: 16px;
 }
-
-.workspace-stack > .workspace-grid:first-child > .surface-card:first-child .surface-card__body :deep(.el-button:first-child) {
-  min-height: 54px;
-  font-size: 18px;
-}
 </style>
