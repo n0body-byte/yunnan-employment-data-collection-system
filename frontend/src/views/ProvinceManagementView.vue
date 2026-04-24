@@ -245,11 +245,17 @@
           <el-table-column prop="is_active" label="启用" min-width="100">
             <template #default="{ row }">{{ row.is_active ? '是' : '否' }}</template>
           </el-table-column>
+          <el-table-column prop="has_reported_data" label="已有上报数据" min-width="120">
+            <template #default="{ row }">{{ row.has_reported_data ? '是' : '否' }}</template>
+          </el-table-column>
           <el-table-column label="操作" min-width="180">
             <template #default="{ row }">
               <el-space>
                 <el-button type="primary" link @click="openUserEditor(row)">编辑</el-button>
-                <el-button type="danger" link @click="deleteUser(row.id)">删除</el-button>
+                <el-button v-if="row.has_reported_data" :type="row.is_active ? 'warning' : 'success'" link @click="toggleUserActive(row)">
+                  {{ row.is_active ? '停用' : '启用' }}
+                </el-button>
+                <el-button v-else type="danger" link @click="deleteUser(row.id)">删除</el-button>
               </el-space>
             </template>
           </el-table-column>
@@ -833,6 +839,16 @@ const deleteUser = async (id: number) => {
     await loadUsers()
   } catch (error: any) {
     ElMessage.error(error?.response?.data?.detail ?? '删除失败')
+  }
+}
+
+const toggleUserActive = async (row: any) => {
+  try {
+    await http.put(`/api/users/${row.id}`, { is_active: !row.is_active })
+    ElMessage.success(row.is_active ? '用户已停用' : '用户已启用')
+    await loadUsers()
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.detail ?? '状态更新失败')
   }
 }
 

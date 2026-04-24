@@ -274,6 +274,13 @@ def _get_enterprise_for_user(db: Session, user_id: int) -> Enterprise | None:
     return db.scalar(select(Enterprise).where(Enterprise.owner_user_id == user_id))
 
 
+def _user_has_reported_data(db: Session, user: User) -> bool:
+    enterprise = _get_enterprise_for_user(db, user.id)
+    if enterprise is None:
+        return False
+    return db.scalar(select(EmploymentReport.id).where(EmploymentReport.enterprise_id == enterprise.id)) is not None
+
+
 def _get_reporting_window(db: Session, report_month: str) -> ReportingWindowConfig | None:
     return db.scalar(select(ReportingWindowConfig).where(ReportingWindowConfig.report_month == report_month))
 
@@ -365,6 +372,20 @@ def _serialize_report(report: EmploymentReport) -> EmploymentReportRead:
         delete_remark=data.delete_remark,
         created_at=data.created_at,
         updated_at=data.updated_at,
+    )
+
+
+def _serialize_user(user: User, db: Session) -> UserQueryExportRead:
+    return UserQueryExportRead(
+        id=user.id,
+        username=user.username,
+        role=user.role,
+        region=user.region,
+        managed_role_id=user.managed_role_id,
+        is_active=user.is_active,
+        has_reported_data=_user_has_reported_data(db, user),
+        created_at=user.created_at,
+        updated_at=user.updated_at,
     )
 
 
@@ -509,7 +530,7 @@ def list_users(
     report_quarter: str | None = Query(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission(PermissionCode.USER_MANAGE)),
-) -> list[User]:
+ ) -> list[UserQueryExportRead]:
     statement = select(User).outerjoin(Enterprise, Enterprise.owner_user_id == User.id)
     if report_month or report_quarter:
         statement = statement.outerjoin(EmploymentReport, EmploymentReport.enterprise_id == Enterprise.id)
@@ -546,7 +567,8 @@ def list_users(
         months = quarter_months.get(quarter.upper())
         if len(year) == 4 and months:
             statement = statement.where(or_(*[EmploymentReport.report_month == f"{year}-{month}" for month in months]))
-    return db.scalars(statement.order_by(User.created_at.desc(), User.id.desc())).unique().all()
+    users = db.scalars(statement.order_by(User.created_at.desc(), User.id.desc())).unique().all()
+    return [_serialize_user(user, db) for user in users]
 
 
 @router.get("/users/export", status_code=status.HTTP_200_OK, summary="Export user query results")

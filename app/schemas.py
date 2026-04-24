@@ -111,6 +111,7 @@ class UserRead(ORMBaseSchema):
     region: str
     managed_role_id: Optional[int] = None
     is_active: bool = True
+    has_reported_data: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -490,6 +491,7 @@ class UserQueryExportRead(ORMBaseSchema):
     region: str
     managed_role_id: Optional[int] = None
     is_active: bool = True
+    has_reported_data: bool = False
     created_at: datetime
     updated_at: datetime
 
