@@ -249,9 +249,9 @@ def _get_user_permissions(db: Session, user: User) -> set[PermissionCode]:
 def require_role(*roles: UserRole):
     def dependency(current_user: User = Depends(get_current_user)) -> User:
         if current_user.role not in roles:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="权限不足")
         if not current_user.is_active:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is inactive")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="用户已停用")
         return current_user
 
     return dependency
@@ -260,11 +260,11 @@ def require_role(*roles: UserRole):
 def require_permission(*permission_codes: PermissionCode):
     def dependency(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> User:
         if not current_user.is_active:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is inactive")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="用户已停用")
         current_permissions = _get_user_permissions(db, current_user)
         missing = [code.value for code in permission_codes if code not in current_permissions]
         if missing:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Missing permissions: {', '.join(missing)}")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"缺少权限: {', '.join(missing)}")
         return current_user
 
     return dependency
@@ -281,12 +281,12 @@ def _get_reporting_window(db: Session, report_month: str) -> ReportingWindowConf
 def _ensure_reporting_window_open(db: Session, report_month: str) -> None:
     config = _get_reporting_window(db, report_month)
     if config is None:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Reporting window is not configured for this month")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="当前月份尚未配置上报时间窗")
     now = _now_utc()
     start_at = config.start_at if config.start_at.tzinfo else config.start_at.replace(tzinfo=UTC)
     end_at = config.end_at if config.end_at.tzinfo else config.end_at.replace(tzinfo=UTC)
     if now < start_at or now > end_at:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Current time is outside the configured reporting window")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="当前时间不在允许的上报时间范围内")
 
 
 def _get_report_or_404(db: Session, report_id: int) -> EmploymentReport:
@@ -296,7 +296,7 @@ def _get_report_or_404(db: Session, report_id: int) -> EmploymentReport:
         .where(EmploymentReport.id == report_id)
     )
     if report is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="报表不存在")
     return report
 
 
@@ -375,7 +375,7 @@ def _apply_enterprise_scope(statement, current_user: User):
         return statement.where(_region_scope_expression(Enterprise.region, current_user.region))
     if current_user.role == UserRole.ENTERPRISE:
         return statement.where(Enterprise.owner_user_id == current_user.id)
-    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Unsupported role")
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="不支持的角色类型")
 
 
 def _apply_report_scope(statement, current_user: User):
@@ -386,7 +386,7 @@ def _apply_report_scope(statement, current_user: User):
         return statement.where(_region_scope_expression(Enterprise.region, current_user.region))
     if current_user.role == UserRole.ENTERPRISE:
         return statement.where(Enterprise.owner_user_id == current_user.id)
-    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Unsupported role")
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="不支持的角色类型")
 
 
 def _load_reports_for_analysis(db: Session, report_months: list[str] | None = None) -> list[EmploymentReport]:
@@ -422,9 +422,9 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> LoginResponse
     _ensure_acl_seeded(db)
     user = db.scalar(select(User).where(User.username == payload.username))
     if user is None or user.role != payload.role or not verify_password(payload.password, user.password_hash):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username, password, or role")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户名、密码或角色不正确")
     if not user.is_active:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is inactive")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="用户已停用")
     access_token = create_access_token(subject=str(user.id), role=user.role.value, region=user.region)
     return LoginResponse(access_token=access_token, role=user.role, region=user.region, managed_role_id=user.managed_role_id)
 
@@ -432,7 +432,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> LoginResponse
 @router.post("/auth/change-password", status_code=status.HTTP_200_OK, summary="Change password")
 def change_password(payload: PasswordChangeRequest, db: Session = Depends(get_db), current_user: User = Depends(require_permission(PermissionCode.PASSWORD_CHANGE))) -> dict[str, str]:
     if not verify_password(payload.old_password, current_user.password_hash):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Old password is incorrect")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="原密码不正确")
     current_user.password_hash = hash_password(payload.new_password)
     db.commit()
     return {"message": "Password changed successfully"}
@@ -459,7 +459,7 @@ def create_role(payload: ManagedRoleCreate, db: Session = Depends(get_db), curre
         db.commit()
     except IntegrityError as exc:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Role name already exists") from exc
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="角色名称已存在") from exc
     db.refresh(role)
     return db.scalar(select(ManagedRole).options(selectinload(ManagedRole.permissions)).where(ManagedRole.id == role.id))
 
@@ -467,7 +467,7 @@ def create_role(payload: ManagedRoleCreate, db: Session = Depends(get_db), curre
 def update_role(role_id: int, payload: ManagedRoleUpdate, db: Session = Depends(get_db), current_user: User = Depends(require_permission(PermissionCode.ROLE_MANAGE))) -> ManagedRole:
     role = db.scalar(select(ManagedRole).options(selectinload(ManagedRole.permissions)).where(ManagedRole.id == role_id))
     if role is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Role not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="角色不存在")
     if payload.name is not None:
         role.name = payload.name
     if payload.description is not None:
@@ -485,7 +485,7 @@ def update_role(role_id: int, payload: ManagedRoleUpdate, db: Session = Depends(
 def delete_role(role_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission(PermissionCode.ROLE_MANAGE))) -> dict[str, str]:
     role = db.get(ManagedRole, role_id)
     if role is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Role not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="角色不存在")
     for user in db.scalars(select(User).where(User.managed_role_id == role_id)).all():
         user.managed_role_id = None
     db.delete(role)
@@ -615,7 +615,7 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), current_user
         db.commit()
     except IntegrityError as exc:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username already exists") from exc
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="用户名已存在") from exc
     db.refresh(user)
     return user
 
@@ -624,7 +624,7 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), current_user
 def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db), current_user: User = Depends(require_permission(PermissionCode.USER_MANAGE))) -> User:
     user = db.get(User, user_id)
     if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
     if payload.username is not None:
         user.username = payload.username
     if payload.password is not None:
@@ -641,7 +641,7 @@ def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db)
         db.commit()
     except IntegrityError as exc:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username already exists") from exc
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="用户名已存在") from exc
     db.refresh(user)
     return user
 
@@ -650,10 +650,10 @@ def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db)
 def delete_user(user_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission(PermissionCode.USER_MANAGE))) -> dict[str, str]:
     user = db.get(User, user_id)
     if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
     enterprise = _get_enterprise_for_user(db, user.id)
     if enterprise is not None and db.scalar(select(EmploymentReport.id).where(EmploymentReport.enterprise_id == enterprise.id)) is not None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User has reported data and cannot be deleted")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="该用户已有上报数据，不能删除")
     db.delete(user)
     db.commit()
     return {"message": "User deleted successfully"}
@@ -668,7 +668,7 @@ def list_reporting_windows(db: Session = Depends(get_db), current_user: User = D
 def get_reporting_window(report_month: str, db: Session = Depends(get_db), current_user: User = Depends(require_role(UserRole.PROVINCE, UserRole.CITY, UserRole.ENTERPRISE))) -> ReportingWindowConfig:
     config = _get_reporting_window(db, report_month)
     if config is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reporting window was not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="未找到对应的上报时间窗")
     return config
 
 
@@ -691,7 +691,7 @@ def get_system_monitor(current_user: User = Depends(require_permission(Permissio
     try:
         import psutil
     except ImportError as exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="psutil is required") from exc
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="系统未安装 psutil，无法获取监控数据") from exc
     memory = psutil.virtual_memory()
     disk = psutil.disk_usage("/")
     return SystemMonitorRead(
@@ -711,7 +711,7 @@ def get_system_monitor(current_user: User = Depends(require_permission(Permissio
 def get_current_enterprise(db: Session = Depends(get_db), current_user: User = Depends(require_permission(PermissionCode.ENTERPRISE_INFO_EDIT))) -> Enterprise:
     enterprise = _get_enterprise_for_user(db, current_user.id)
     if enterprise is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Enterprise filing was not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="企业备案信息不存在")
     return enterprise
 
 
@@ -743,7 +743,7 @@ def list_enterprises(
 @router.post("/enterprises/filing/submit", response_model=EnterpriseRead, summary="Submit enterprise filing")
 def submit_enterprise_filing(payload: EnterpriseFilingSubmit, db: Session = Depends(get_db), current_user: User = Depends(require_permission(PermissionCode.ENTERPRISE_INFO_EDIT, PermissionCode.ENTERPRISE_FILING_SUBMIT))) -> Enterprise:
     if payload.region != current_user.region:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Region must match current enterprise user")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="所属地区必须与当前企业用户一致")
     enterprise = _get_enterprise_for_user(db, current_user.id)
     enterprise_data = payload.model_dump()
     enterprise_data["region"] = current_user.region
@@ -759,7 +759,7 @@ def submit_enterprise_filing(payload: EnterpriseFilingSubmit, db: Session = Depe
         db.commit()
     except IntegrityError as exc:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Organization code already exists") from exc
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="组织机构代码已存在") from exc
     db.refresh(enterprise)
     return enterprise
 
@@ -768,9 +768,9 @@ def submit_enterprise_filing(payload: EnterpriseFilingSubmit, db: Session = Depe
 def audit_enterprise_filing(enterprise_id: int, payload: FilingAuditRequest, db: Session = Depends(get_db), current_user: User = Depends(require_permission(PermissionCode.PROVINCE_FILING_REVIEW))) -> Enterprise:
     enterprise = db.get(Enterprise, enterprise_id)
     if enterprise is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Enterprise not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="企业不存在")
     if enterprise.filing_status != FilingStatus.PENDING:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Enterprise filing is not pending")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="企业备案当前不是待审核状态")
     enterprise.filing_status = FilingStatus.APPROVED if payload.action == AuditAction.APPROVE else FilingStatus.REJECTED
     enterprise.filing_audit_remark = payload.remark
     db.commit()
@@ -804,9 +804,9 @@ def list_employment_reports(
 def get_employment_report(report_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_role(UserRole.PROVINCE, UserRole.CITY, UserRole.ENTERPRISE))) -> EmploymentReportRead:
     report = _get_report_or_404(db, report_id)
     if current_user.role == UserRole.CITY and not _region_is_manageable(current_user.region, report.enterprise.region):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Report is outside your region")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="该报表不在你的地区权限范围内")
     if current_user.role == UserRole.ENTERPRISE and report.enterprise.owner_user_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Report is outside your scope")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="该报表不在你的数据权限范围内")
     return _serialize_report(report)
 
 
@@ -814,13 +814,13 @@ def get_employment_report(report_id: int, db: Session = Depends(get_db), current
 def submit_employment_report(payload: EmploymentReportSubmit, db: Session = Depends(get_db), current_user: User = Depends(require_permission(PermissionCode.ENTERPRISE_REPORT_SUBMIT))) -> EmploymentReportRead:
     enterprise = _get_enterprise_for_user(db, current_user.id)
     if enterprise is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Enterprise filing was not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="企业备案信息不存在")
     if enterprise.filing_status != FilingStatus.APPROVED:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Monthly reports require approved filing")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="企业备案审核通过后才能提交月报")
     _ensure_reporting_window_open(db, payload.report_month)
     report = db.scalar(select(EmploymentReport).options(selectinload(EmploymentReport.enterprise), selectinload(EmploymentReport.revisions)).where(EmploymentReport.enterprise_id == enterprise.id, EmploymentReport.report_month == payload.report_month))
     if report is not None and report.review_status in {ReviewStatus.PENDING_CITY_REVIEW, ReviewStatus.PENDING_PROVINCE_REVIEW, ReviewStatus.ARCHIVED, ReviewStatus.REPORTED_TO_MINISTRY}:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Current report status does not allow resubmission")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="当前报表状态不允许再次提交")
     report_data = payload.model_dump()
     if report is None:
         report = EmploymentReport(enterprise_id=enterprise.id, **report_data)
@@ -838,7 +838,7 @@ def submit_employment_report(payload: EmploymentReportSubmit, db: Session = Depe
         db.commit()
     except IntegrityError as exc:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="One report per enterprise per month is allowed") from exc
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="每个企业每月只允许提交一份报表") from exc
     return _serialize_report(_get_report_or_404(db, report.id))
 
 
@@ -846,9 +846,9 @@ def submit_employment_report(payload: EmploymentReportSubmit, db: Session = Depe
 def city_audit_report(report_id: int, payload: EmploymentReportAuditRequest, db: Session = Depends(get_db), current_user: User = Depends(require_permission(PermissionCode.CITY_REPORT_AUDIT))) -> EmploymentReportRead:
     report = _get_report_or_404(db, report_id)
     if report.review_status != ReviewStatus.PENDING_CITY_REVIEW:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Report is not pending city review")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="该月报当前不是待市级审核状态")
     if not _region_is_manageable(current_user.region, report.enterprise.region):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot audit reports outside your region")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="不能审核非本地区的报表")
     report.review_status = ReviewStatus.PENDING_PROVINCE_REVIEW if payload.action == AuditAction.APPROVE else ReviewStatus.REJECTED
     report.return_remark = None if payload.action == AuditAction.APPROVE else payload.remark
     report.city_audited_at = _now_utc()
@@ -860,7 +860,7 @@ def city_audit_report(report_id: int, payload: EmploymentReportAuditRequest, db:
 def province_final_audit_report(report_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission(PermissionCode.PROVINCE_REPORT_MANAGE))) -> EmploymentReportRead:
     report = _get_report_or_404(db, report_id)
     if report.review_status != ReviewStatus.PENDING_PROVINCE_REVIEW:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Report is not pending province review")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="该月报当前不是待省级审核状态")
     report.review_status = ReviewStatus.ARCHIVED
     report.province_audited_at = _now_utc()
     report.return_remark = None
@@ -872,9 +872,9 @@ def province_final_audit_report(report_id: int, db: Session = Depends(get_db), c
 def province_return_report(report_id: int, payload: EmploymentReportAuditRequest, db: Session = Depends(get_db), current_user: User = Depends(require_permission(PermissionCode.PROVINCE_REPORT_MANAGE))) -> EmploymentReportRead:
     report = _get_report_or_404(db, report_id)
     if report.review_status != ReviewStatus.PENDING_PROVINCE_REVIEW:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Report is not pending province review")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="该月报当前不是待省级审核状态")
     if payload.action != AuditAction.REJECT:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Province return endpoint only supports reject action")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="省级退回接口仅支持退回操作")
     report.review_status = ReviewStatus.REJECTED
     report.return_remark = payload.remark
     report.province_audited_at = _now_utc()
@@ -886,7 +886,7 @@ def province_return_report(report_id: int, payload: EmploymentReportAuditRequest
 def report_to_ministry(report_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission(PermissionCode.NATIONAL_EXCHANGE, PermissionCode.PROVINCE_REPORT_MANAGE))) -> EmploymentReportRead:
     report = _get_report_or_404(db, report_id)
     if report.review_status != ReviewStatus.ARCHIVED:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only archived reports can be submitted to ministry")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="只有已归档报表才能上报部级")
     report.review_status = ReviewStatus.REPORTED_TO_MINISTRY
     report.reported_to_ministry_at = _now_utc()
     db.commit()
@@ -1046,7 +1046,7 @@ def browse_notifications(db: Session = Depends(get_db), current_user: User = Dep
 @router.post("/notifications", response_model=NotificationRead, status_code=status.HTTP_201_CREATED, summary="Create notification")
 def create_notification(payload: NotificationCreate, db: Session = Depends(get_db), current_user: User = Depends(require_permission(PermissionCode.NOTICE_MANAGE))) -> Notification:
     if current_user.role not in {UserRole.PROVINCE, UserRole.CITY}:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only province or city users can publish notifications")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="只有省级或市级用户可以发布通知")
     notification = Notification(title=payload.title, content=payload.content, publisher_id=current_user.id)
     db.add(notification)
     db.commit()
@@ -1058,9 +1058,9 @@ def create_notification(payload: NotificationCreate, db: Session = Depends(get_d
 def update_notification(notification_id: int, payload: NotificationUpdate, db: Session = Depends(get_db), current_user: User = Depends(require_permission(PermissionCode.NOTICE_MANAGE))) -> Notification:
     notification = db.get(Notification, notification_id)
     if notification is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="通知不存在")
     if notification.publisher_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot edit others' notifications")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="不能编辑其他人发布的通知")
     if payload.title is not None:
         notification.title = payload.title
     if payload.content is not None:
@@ -1075,9 +1075,9 @@ def update_notification(notification_id: int, payload: NotificationUpdate, db: S
 def delete_notification(notification_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission(PermissionCode.NOTICE_MANAGE))) -> dict[str, str]:
     notification = db.get(Notification, notification_id)
     if notification is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="通知不存在")
     if notification.publisher_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot delete others' notifications")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="不能删除其他人发布的通知")
     db.delete(notification)
     db.commit()
     return {"message": "Notification deleted successfully"}

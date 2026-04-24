@@ -80,7 +80,7 @@ def decode_access_token(token: str) -> dict[str, Any]:
     try:
         header_segment, payload_segment, signature_segment = token.split(".")
     except ValueError as exc:
-        raise ValueError("Invalid JWT format") from exc
+        raise ValueError("身份令牌格式无效") from exc
 
     signing_input = f"{header_segment}.{payload_segment}".encode("utf-8")
     expected_signature = hmac.new(
@@ -90,12 +90,12 @@ def decode_access_token(token: str) -> dict[str, Any]:
     ).digest()
     actual_signature = _b64url_decode(signature_segment)
     if not hmac.compare_digest(expected_signature, actual_signature):
-        raise ValueError("Invalid JWT signature")
+        raise ValueError("身份令牌签名无效")
 
     header = json.loads(_b64url_decode(header_segment))
     payload = json.loads(_b64url_decode(payload_segment))
     if header.get("alg") != settings.jwt_algorithm:
-        raise ValueError("Unsupported JWT algorithm")
+        raise ValueError("身份令牌算法不受支持")
     if payload.get("exp") is not None and int(payload["exp"]) < int(time.time()):
-        raise ValueError("JWT token has expired")
+        raise ValueError("身份令牌已过期")
     return payload
