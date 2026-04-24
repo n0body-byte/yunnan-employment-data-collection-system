@@ -179,8 +179,8 @@
             <template #default="{ row }">
               <el-space wrap>
                 <el-button size="small" type="primary" @click="viewReport(row.id)">查看</el-button>
-                <el-button size="small" type="success" @click="finalAudit(row.id)">终审归档</el-button>
-                <el-button size="small" type="danger" plain @click="openReportReject(row.id)">退回修改</el-button>
+                <el-button size="small" type="success" :disabled="!canFinalAudit(row)" @click="finalAudit(row.id)">终审归档</el-button>
+                <el-button size="small" type="danger" plain :disabled="!canProvinceReturn(row)" @click="openReportReject(row.id)">退回修改</el-button>
                 <el-button size="small" @click="reportToMinistry(row.id)">上报部级</el-button>
                 <el-button size="small" type="warning" @click="openRevision(row)">数据修订</el-button>
                 <el-button size="small" @click="viewRevisions(row.id)">修订记录</el-button>
@@ -578,6 +578,13 @@ const pendingReportsPreview = computed(() => reports.value.filter((item) => item
 const filingStatusText = (status: string) => ({ PENDING: '待审核', APPROVED: '已通过', REJECTED: '已退回' }[status] ?? status)
 const reviewStatusText = (status: string) => ({ PENDING_CITY_REVIEW: '待市级审核', PENDING_PROVINCE_REVIEW: '待省级审核', ARCHIVED: '已归档', REPORTED_TO_MINISTRY: '已上报部级', REJECTED: '已退回' }[status] ?? status)
 const roleText = (role: string) => ({ PROVINCE: '省级', CITY: '市级', ENTERPRISE: '企业' }[role] ?? role)
+const canFinalAudit = (row: { review_status: string }) => row.review_status === 'PENDING_PROVINCE_REVIEW'
+const canProvinceReturn = (row: { review_status: string }) => row.review_status === 'PENDING_PROVINCE_REVIEW'
+const localizeApiDetail = (detail?: string) => ({
+  'Report is not pending province review': '该月报当前不是待省级审核状态',
+  'Province return endpoint only supports reject action': '省级退回接口仅支持退回操作',
+})[detail ?? ''] ?? detail
+const resolveApiErrorMessage = (error: any, fallback: string) => localizeApiDetail(error?.response?.data?.detail) ?? fallback
 
 const loadEnterprises = async () => {
   const { data } = await http.get('/api/enterprises', {
@@ -710,7 +717,7 @@ const finalAudit = async (id: number) => {
     ElMessage.success('终审归档成功')
     await loadReports()
   } catch (error: any) {
-    ElMessage.error(error?.response?.data?.detail ?? '终审失败')
+    ElMessage.error(resolveApiErrorMessage(error, '终审失败'))
   }
 }
 
@@ -728,7 +735,7 @@ const confirmReportReject = async () => {
     reportRejectVisible.value = false
     await loadReports()
   } catch (error: any) {
-    ElMessage.error(error?.response?.data?.detail ?? '退回失败')
+    ElMessage.error(resolveApiErrorMessage(error, '退回失败'))
   }
 }
 
